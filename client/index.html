@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Neon</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #111; font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    #game-container { position: relative; width: 100%; height: 100%; }
+    canvas { display: block; }
+
+    /* ---- Join screen ---- */
+    #join-screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 100;
+    }
+    #join-screen h1 { color: #0ff; font-size: 2.5rem; margin-bottom: 1.5rem; text-shadow: 0 0 20px #0ff; }
+    #join-screen input {
+      width: 280px; padding: 12px 16px; font-size: 1rem;
+      border: 2px solid #0ff; border-radius: 8px;
+      background: rgba(0, 255, 255, 0.05); color: #fff;
+      outline: none; text-align: center;
+    }
+    #join-screen input::placeholder { color: rgba(255,255,255,0.4); }
+    #join-screen input:focus { border-color: #fff; box-shadow: 0 0 15px rgba(0,255,255,0.3); }
+    #join-screen button {
+      margin-top: 1rem; padding: 12px 40px; font-size: 1rem;
+      border: none; border-radius: 8px; cursor: pointer;
+      background: #0ff; color: #111; font-weight: 700;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    #join-screen button:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(0,255,255,0.5); }
+
+    /* ---- Chat ---- */
+    #chat-container {
+      position: absolute; bottom: 0; left: 0;
+      width: 400px; max-width: 100%;
+      display: flex; flex-direction: column;
+      pointer-events: none;
+      z-index: 50;
+    }
+    #chat-log {
+      max-height: 200px; overflow-y: auto;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex; flex-direction: column; gap: 2px;
+      pointer-events: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.2) transparent;
+    }
+    .chat-message { font-size: 0.85rem; color: #ddd; line-height: 1.3; }
+    .chat-message .name { color: #0ff; font-weight: 600; }
+    .chat-message.system { color: #888; font-style: italic; }
+
+    #chat-input-row {
+      display: flex;
+      background: rgba(0, 0, 0, 0.7);
+      pointer-events: auto;
+    }
+    #chat-input {
+      flex: 1; padding: 8px 12px; font-size: 0.85rem;
+      border: none; outline: none;
+      background: transparent; color: #fff;
+    }
+    #chat-input::placeholder { color: rgba(255,255,255,0.35); }
+
+    /* ---- Player labels (rendered in HTML overlay) ---- */
+    #labels-container {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .player-label {
+      position: absolute;
+      color: #fff; font-size: 11px; font-weight: 600;
+      text-shadow: 1px 1px 2px #000, -1px -1px 2px #000;
+      white-space: nowrap;
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+    }
+    .chat-bubble {
+      position: absolute;
+      background: rgba(0,0,0,0.75);
+      color: #fff; font-size: 12px;
+      padding: 4px 10px; border-radius: 10px;
+      max-width: 200px; word-wrap: break-word;
+      text-align: center;
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <!-- PixiJS canvas is appended here -->
+    <div id="labels-container"></div>
+
+    <!-- Join screen -->
+    <div id="join-screen">
+      <h1>Project Neon</h1>
+      <input id="name-input" type="text" placeholder="Enter your name" maxlength="16" autofocus />
+      <button id="join-btn">Join</button>
+    </div>
+
+    <!-- Chat -->
+    <div id="chat-container">
+      <div id="chat-log"></div>
+      <div id="chat-input-row">
+        <input id="chat-input" type="text" placeholder="Press Enter to chat..." maxlength="200" />
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
