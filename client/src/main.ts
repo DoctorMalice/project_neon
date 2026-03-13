@@ -23,6 +23,10 @@ const SERVER_TICK_MS = 50; // 20 ticks/sec
 // Local movement (path preview)
 let localPath: Position[] = [];
 
+// Camera lerp
+const CAMERA_LERP_SPEED = 0.1;
+const cameraPos: Position = { x: 0, y: 0 };
+
 // ---- Init ----
 const network = new Network();
 const renderer = new Renderer();
@@ -150,10 +154,12 @@ async function start(displayName: string) {
       });
     }
 
-    // Camera follows local player
+    // Camera lerps toward local player
     const localPlayer = renderPlayers.find((p) => p.isLocal);
     if (localPlayer) {
-      renderer.setCamera({ x: localPlayer.x, y: localPlayer.y });
+      cameraPos.x += (localPlayer.x - cameraPos.x) * CAMERA_LERP_SPEED;
+      cameraPos.y += (localPlayer.y - cameraPos.y) * CAMERA_LERP_SPEED;
+      renderer.setCamera(cameraPos);
     }
 
     // Clear path preview when we arrive
