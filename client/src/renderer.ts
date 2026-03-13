@@ -13,6 +13,12 @@ const PLAYER_COLOR = 0x00ffcc;
 const LOCAL_PLAYER_COLOR = 0x00ffff;
 const PATH_PREVIEW_COLOR = 0xffffff;
 
+// Zoom
+const MIN_ZOOM = 1.0; // current default = max zoom out
+const MAX_ZOOM = 3.0; // 3x zoom in
+const ZOOM_STEP = 0.15;
+const ZOOM_LERP_SPEED = 0.15; // smoothing factor per frame
+
 interface RenderPlayer {
   id: string;
   x: number;
@@ -31,6 +37,8 @@ export class Renderer {
   private camera: Position = { x: 0, y: 0 };
   private players: RenderPlayer[] = [];
   private pathPreview: Position[] = [];
+  private zoom = MIN_ZOOM;
+  private targetZoom = MIN_ZOOM;
 
   // Label management
   private labelsContainer: HTMLElement;
@@ -62,6 +70,16 @@ export class Renderer {
     this.worldContainer.addChild(this.pathGraphics);
     this.worldContainer.addChild(this.playerGraphics);
     this.app.stage.addChild(this.worldContainer);
+
+    // Zoom with scroll wheel
+    this.app.canvas.addEventListener('wheel', (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        this.targetZoom = Math.min(this.targetZoom + ZOOM_STEP, MAX_ZOOM);
+      } else {
+        this.targetZoom = Math.max(this.targetZoom - ZOOM_STEP, MIN_ZOOM);
+      }
+    }, { passive: false });
   }
 
   get canvas(): HTMLCanvasElement {
@@ -124,12 +142,18 @@ export class Renderer {
     this.bubbleElements.set(playerId, { el, timeout });
   }
 
+  /** Effective tile size accounting for zoom */
+  private get tileSize(): number {
+    return TILE_SIZE * this.zoom;
+  }
+
   /** Convert world tile position to screen coordinates */
   worldToScreen(wx: number, wy: number): { sx: number; sy: number } {
     const screenW = this.app.screen.width;
     const screenH = this.app.screen.height;
-    const sx = (wx - this.camera.x) * TILE_SIZE + screenW / 2;
-    const sy = (wy - this.camera.y) * TILE_SIZE + screenH / 2;
+    const ts = this.tileSize;
+    const sx = (wx - this.camera.x) * ts + screenW / 2;
+    const sy = (wy - this.camera.y) * ts + screenH / 2;
     return { sx, sy };
   }
 
@@ -137,18 +161,24 @@ export class Renderer {
   screenToWorld(sx: number, sy: number): Position {
     const screenW = this.app.screen.width;
     const screenH = this.app.screen.height;
-    const wx = (sx - screenW / 2) / TILE_SIZE + this.camera.x;
-    const wy = (sy - screenH / 2) / TILE_SIZE + this.camera.y;
+    const ts = this.tileSize;
+    const wx = (sx - screenW / 2) / ts + this.camera.x;
+    const wy = (sy - screenH / 2) / ts + this.camera.y;
     return { x: Math.floor(wx), y: Math.floor(wy) };
   }
 
   render() {
+    // Smooth zoom interpolation
+    this.zoom += (this.targetZoom - this.zoom) * ZOOM_LERP_SPEED;
+    if (Math.abs(this.targetZoom - this.zoom) < 0.001) this.zoom = this.targetZoom;
+
     const screenW = this.app.screen.width;
     const screenH = this.app.screen.height;
+    const ts = this.tileSize;
 
     // Calculate visible tile range (viewport culling)
-    const tilesX = Math.ceil(screenW / TILE_SIZE) + 2;
-    const tilesY = Math.ceil(screenH / TILE_SIZE) + 2;
+    const tilesX = Math.ceil(screenW / ts) + 2;
+    const tilesY = Math.ceil(screenH / ts) + 2;
     const startX = Math.floor(this.camera.x - tilesX / 2);
     const startY = Math.floor(this.camera.y - tilesY / 2);
     const endX = startX + tilesX;
@@ -161,10 +191,10 @@ export class Renderer {
         if (y < 0 || y >= this.map.length || x < 0 || x >= this.map[0].length) continue;
         const tile = this.map[y][x];
         const { sx, sy } = this.worldToScreen(x, y);
-        this.tileGraphics.rect(sx, sy, TILE_SIZE, TILE_SIZE);
+        this.tileGraphics.rect(sx, sy, ts, ts);
         this.tileGraphics.fill(TILE_COLORS[tile]);
         // Grid lines
-        this.tileGraphics.rect(sx, sy, TILE_SIZE, TILE_SIZE);
+        this.tileGraphics.rect(sx, sy, ts, ts);
         this.tileGraphics.stroke({ width: 1, color: 0x000000, alpha: 0.15 });
       }
     }
@@ -173,7 +203,7 @@ export class Renderer {
     this.pathGraphics.clear();
     for (const pos of this.pathPreview) {
       const { sx, sy } = this.worldToScreen(pos.x, pos.y);
-      this.pathGraphics.rect(sx + TILE_SIZE * 0.3, sy + TILE_SIZE * 0.3, TILE_SIZE * 0.4, TILE_SIZE * 0.4);
+      this.pathGraphics.rect(sx + ts * 0.3, sy + ts * 0.3, ts * 0.4, ts * 0.4);
       this.pathGraphics.fill({ color: PATH_PREVIEW_COLOR, alpha: 0.25 });
     }
 
@@ -184,9 +214,9 @@ export class Renderer {
     for (const p of this.players) {
       activeIds.add(p.id);
       const { sx, sy } = this.worldToScreen(p.x, p.y);
-      const centerX = sx + TILE_SIZE / 2;
-      const centerY = sy + TILE_SIZE / 2;
-      const radius = TILE_SIZE * 0.35;
+      const centerX = sx + ts / 2;
+      const centerY = sy + ts / 2;
+      const radius = ts * 0.35;
 
       const color = p.isLocal ? LOCAL_PLAYER_COLOR : PLAYER_COLOR;
       this.playerGraphics.circle(centerX, centerY, radius);
