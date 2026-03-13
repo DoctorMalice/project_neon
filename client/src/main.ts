@@ -120,7 +120,7 @@ async function start(displayName: string) {
 
     const path = findPath(map, from, target);
     if (path && path.length > 0) {
-      localPath = path;
+      localPath = path.length > 1 ? path.slice(1) : path;
       renderer.setPathPreview(localPath);
       network.send({ type: 'MOVE_TO', x: target.x, y: target.y });
     }

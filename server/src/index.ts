@@ -117,7 +117,9 @@ wss.on('connection', (ws) => {
       const path = findPath(map, from, target);
       if (!path || path.length === 0) return;
 
-      player.path = path;
+      // Skip the start tile — the player is already on/near it.
+      // Without this, rapid clicks cause backtracking to the rounded tile.
+      player.path = path.length > 1 ? path.slice(1) : path;
       player.pathIndex = 0;
       return;
     }
@@ -159,23 +161,26 @@ function tick() {
   const tilesPerTick = MOVEMENT_SPEED / TICK_RATE;
 
   for (const player of players.values()) {
-    if (player.pathIndex >= player.path.length) continue;
+    let remaining = tilesPerTick;
 
-    // Move toward next waypoint
-    const target = player.path[player.pathIndex];
-    const dx = target.x - player.position.x;
-    const dy = target.y - player.position.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    while (remaining > 0 && player.pathIndex < player.path.length) {
+      const target = player.path[player.pathIndex];
+      const dx = target.x - player.position.x;
+      const dy = target.y - player.position.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist <= tilesPerTick) {
-      // Reached this waypoint
-      player.position.x = target.x;
-      player.position.y = target.y;
-      player.pathIndex++;
-    } else {
-      // Move toward waypoint
-      player.position.x += (dx / dist) * tilesPerTick;
-      player.position.y += (dy / dist) * tilesPerTick;
+      if (dist <= remaining) {
+        // Reached this waypoint — snap and carry leftover into next waypoint
+        player.position.x = target.x;
+        player.position.y = target.y;
+        remaining -= dist;
+        player.pathIndex++;
+      } else {
+        // Move toward waypoint, consuming all remaining budget
+        player.position.x += (dx / dist) * remaining;
+        player.position.y += (dy / dist) * remaining;
+        remaining = 0;
+      }
     }
   }
 
