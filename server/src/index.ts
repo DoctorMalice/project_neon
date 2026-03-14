@@ -194,10 +194,10 @@ wss.on('connection', (ws) => {
       const item = groundItems.get(msg.itemId);
       if (!item || !item.active) return;
 
-      // Must be on the same tile
-      const px = Math.round(player.position.x);
-      const py = Math.round(player.position.y);
-      if (px !== item.x || py !== item.y) return;
+      // Must be within ~1 tile (accounts for client prediction being ahead of server)
+      const dx = player.position.x - item.x;
+      const dy = player.position.y - item.y;
+      if (dx * dx + dy * dy > 1.5 * 1.5) return;
 
       item.active = false;
       broadcast({ type: 'ITEM_PICKED_UP', itemId: item.id, playerId: player.id });
