@@ -10,6 +10,7 @@ import { Network } from './network';
 import { Renderer } from './renderer';
 import { Chat } from './chat';
 import { DebugOverlay } from './debug';
+import { ContextMenu } from './context-menu';
 
 // ---- State ----
 let myPlayerId: string | null = null;
@@ -50,6 +51,7 @@ const network = new Network();
 const renderer = new Renderer();
 const chat = new Chat(network);
 const debug = new DebugOverlay(network);
+const contextMenu = new ContextMenu();
 
 async function start(displayName: string) {
   await renderer.init();
@@ -76,7 +78,7 @@ async function start(displayName: string) {
         const now = performance.now();
         for (const p of msg.players) {
           playerStates.set(p.id, p);
-          renderer.setPlayerName(p.id, p.displayName);
+
 
           if (p.id === myPlayerId) {
             // ---- Local player reconciliation ----
@@ -106,7 +108,7 @@ async function start(displayName: string) {
           if (!activeIds.has(id)) {
             playerStates.delete(id);
             snapshotBuffers.delete(id);
-            renderer.removePlayerName(id);
+            renderer.removePlayer(id);
           }
         }
         break;
@@ -119,7 +121,6 @@ async function start(displayName: string) {
           x: msg.player.x,
           y: msg.player.y,
         }]);
-        renderer.setPlayerName(msg.player.id, msg.player.displayName);
         chat.addSystemMessage(`${msg.player.displayName} joined the game`);
         break;
 
@@ -127,7 +128,7 @@ async function start(displayName: string) {
         const leaving = playerStates.get(msg.playerId);
         playerStates.delete(msg.playerId);
         snapshotBuffers.delete(msg.playerId);
-        renderer.removePlayerName(msg.playerId);
+        renderer.removePlayer(msg.playerId);
         if (leaving) {
           chat.addSystemMessage(`${leaving.displayName} left the game`);
         }
@@ -141,11 +142,9 @@ async function start(displayName: string) {
     }
   });
 
-  // ---- Click to move ----
-  renderer.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
-    if (!myPlayerId || chat.isFocused) return;
-
-    const target = renderer.screenToWorld(e.clientX, e.clientY);
+  // ---- Movement helper ----
+  function moveToTile(target: Position) {
+    if (!myPlayerId) return;
     if (!isWalkable(map, target)) return;
 
     const from = {
@@ -159,6 +158,42 @@ async function start(displayName: string) {
       localPathIndex = 0;
       renderer.setPathPreview(localPath);
       network.send({ type: 'MOVE_TO', x: target.x, y: target.y });
+    }
+  }
+
+  // ---- Click to move (left click) ----
+  renderer.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+    if (e.button !== 0) return; // left click only
+    if (!myPlayerId || chat.isFocused) return;
+    if (contextMenu.isVisible) return; // let the menu close handler deal with it
+
+    const target = renderer.screenToWorld(e.clientX, e.clientY);
+    moveToTile(target);
+  });
+
+  // ---- Right-click context menu ----
+  renderer.canvas.addEventListener('contextmenu', (e: MouseEvent) => {
+    e.preventDefault();
+    if (!myPlayerId || chat.isFocused) return;
+
+    const clickedPlayer = renderer.getPlayerAtScreen(e.clientX, e.clientY);
+    const tile = renderer.screenToWorld(e.clientX, e.clientY);
+
+    if (clickedPlayer && !clickedPlayer.isLocal) {
+      // Right-clicked on another player
+      const name = playerStates.get(clickedPlayer.id)?.displayName ?? clickedPlayer.id;
+      contextMenu.show(e.clientX, e.clientY, [
+        { label: `— ${name} —`, disabled: true, onSelect() {} },
+        { label: 'Move Here', onSelect() { moveToTile(tile); } },
+        { label: 'Follow', disabled: true, onSelect() {} },
+        { label: 'Trade', disabled: true, onSelect() {} },
+        { label: 'Inspect', disabled: true, onSelect() {} },
+      ]);
+    } else {
+      // Right-clicked on empty ground
+      contextMenu.show(e.clientX, e.clientY, [
+        { label: 'Move Here', onSelect() { moveToTile(tile); } },
+      ]);
     }
   });
 

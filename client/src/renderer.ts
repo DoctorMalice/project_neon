@@ -40,10 +40,8 @@ export class Renderer {
   private zoom = MIN_ZOOM;
   private targetZoom = MIN_ZOOM;
 
-  // Label management
+  // HTML overlay
   private labelsContainer: HTMLElement;
-  private labelElements: Map<string, HTMLDivElement> = new Map();
-  private playerNames: Map<string, string> = new Map();
 
   // Chat bubbles
   private bubbleElements: Map<string, { el: HTMLDivElement; timeout: ReturnType<typeof setTimeout> }> = new Map();
@@ -86,6 +84,23 @@ export class Renderer {
     return this.app.canvas;
   }
 
+  /** Returns the player at the given screen coordinates, or null */
+  getPlayerAtScreen(sx: number, sy: number): RenderPlayer | null {
+    const ts = this.tileSize;
+    const radius = ts * 0.35;
+    for (const p of this.players) {
+      const { sx: px, sy: py } = this.worldToScreen(p.x, p.y);
+      const centerX = px + ts / 2;
+      const centerY = py + ts / 2;
+      const dx = sx - centerX;
+      const dy = sy - centerY;
+      if (dx * dx + dy * dy <= radius * radius) {
+        return p;
+      }
+    }
+    return null;
+  }
+
   setMap(tiles: TileType[][]) {
     this.map = tiles;
   }
@@ -98,17 +113,7 @@ export class Renderer {
     this.players = players;
   }
 
-  setPlayerName(id: string, name: string) {
-    this.playerNames.set(id, name);
-  }
-
-  removePlayerName(id: string) {
-    this.playerNames.delete(id);
-    const label = this.labelElements.get(id);
-    if (label) {
-      label.remove();
-      this.labelElements.delete(id);
-    }
+  removePlayer(id: string) {
     const bubble = this.bubbleElements.get(id);
     if (bubble) {
       clearTimeout(bubble.timeout);
@@ -224,32 +229,11 @@ export class Renderer {
       this.playerGraphics.circle(centerX, centerY, radius);
       this.playerGraphics.stroke({ width: 2, color: 0x000000, alpha: 0.4 });
 
-      // Update HTML label position
-      const name = this.playerNames.get(p.id) || p.id;
-      let label = this.labelElements.get(p.id);
-      if (!label) {
-        label = document.createElement('div');
-        label.className = 'player-label';
-        this.labelsContainer.appendChild(label);
-        this.labelElements.set(p.id, label);
-      }
-      label.textContent = name;
-      label.style.left = `${centerX}px`;
-      label.style.top = `${sy - 4}px`;
-
       // Update chat bubble position
       const bubble = this.bubbleElements.get(p.id);
       if (bubble) {
         bubble.el.style.left = `${centerX}px`;
-        bubble.el.style.top = `${sy - 22}px`;
-      }
-    }
-
-    // Remove labels for players that are gone
-    for (const [id, label] of this.labelElements) {
-      if (!activeIds.has(id)) {
-        label.remove();
-        this.labelElements.delete(id);
+        bubble.el.style.top = `${sy - 4}px`;
       }
     }
   }

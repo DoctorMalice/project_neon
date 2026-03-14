@@ -74,15 +74,7 @@
       pointer-events: none;
       z-index: 10;
     }
-    .player-label {
-      position: absolute;
-      color: #fff; font-size: 11px; font-weight: 600;
-      text-shadow: 1px 1px 2px #000, -1px -1px 2px #000;
-      white-space: nowrap;
-      transform: translate(-50%, -100%);
-      pointer-events: none;
-    }
-    /* ---- Debug overlay ---- */
+/* ---- Debug overlay ---- */
     #debug-overlay {
       position: absolute; top: 8px; right: 8px;
       padding: 8px 12px;
@@ -92,6 +84,38 @@
       border-radius: 4px;
       pointer-events: none;
       z-index: 50;
+    }
+
+    /* ---- Context menu ---- */
+    #context-menu {
+      position: absolute;
+      background: rgba(15, 15, 20, 0.92);
+      border: 1px solid rgba(0, 255, 255, 0.25);
+      border-radius: 6px;
+      padding: 4px 0;
+      min-width: 140px;
+      z-index: 200;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      pointer-events: auto;
+    }
+    .context-menu-item {
+      padding: 6px 16px;
+      font-size: 13px;
+      color: #ddd;
+      cursor: pointer;
+      user-select: none;
+    }
+    .context-menu-item:hover {
+      background: rgba(0, 255, 255, 0.15);
+      color: #fff;
+    }
+    .context-menu-item.disabled {
+      color: #555;
+      cursor: default;
+    }
+    .context-menu-item.disabled:hover {
+      background: none;
+      color: #555;
     }
 
     .chat-bubble {
