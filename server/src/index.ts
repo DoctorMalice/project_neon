@@ -144,6 +144,11 @@ wss.on('connection', (ws) => {
       broadcast(chatMsg);
       return;
     }
+
+    if (msg.type === 'PING') {
+      send(ws, { type: 'PONG', timestamp: msg.timestamp });
+      return;
+    }
   });
 
   ws.on('close', () => {

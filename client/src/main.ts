@@ -8,6 +8,7 @@ import {
 import { Network } from './network';
 import { Renderer } from './renderer';
 import { Chat } from './chat';
+import { DebugOverlay } from './debug';
 
 // ---- State ----
 let myPlayerId: string | null = null;
@@ -31,6 +32,7 @@ const cameraPos: Position = { x: 0, y: 0 };
 const network = new Network();
 const renderer = new Renderer();
 const chat = new Chat(network);
+const debug = new DebugOverlay(network);
 
 async function start(displayName: string) {
   await renderer.init();
@@ -50,6 +52,7 @@ async function start(displayName: string) {
       case 'MAP':
         map = msg.tiles as TileType[][];
         renderer.setMap(map);
+        debug.setMapTiles(msg.width * msg.height);
         break;
 
       case 'WORLD_STATE':
@@ -178,6 +181,10 @@ async function start(displayName: string) {
 
     renderer.setPlayers(renderPlayers);
     renderer.render();
+
+    debug.setPlayerCount(renderPlayers.length);
+    debug.update();
+
     requestAnimationFrame(gameLoop);
   };
 

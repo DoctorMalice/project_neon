@@ -45,7 +45,12 @@ export interface ClientJoinMessage {
   displayName: string;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage;
+export interface ClientPingMessage {
+  type: 'PING';
+  timestamp: number;
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage;
 
 // ---- Server → Client messages ----
 
@@ -93,10 +98,16 @@ export interface ServerJoinedMessage {
   playerId: string;
 }
 
+export interface ServerPongMessage {
+  type: 'PONG';
+  timestamp: number;
+}
+
 export type ServerMessage =
   | ServerWorldStateMessage
   | ServerPlayerJoinMessage
   | ServerPlayerLeaveMessage
   | ServerChatMessage
   | ServerMapMessage
-  | ServerJoinedMessage;
+  | ServerJoinedMessage
+  | ServerPongMessage;
