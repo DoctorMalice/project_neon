@@ -5,6 +5,7 @@ import {
   MOVEMENT_SPEED,
   type ServerPlayerState,
   type Position,
+  type GroundItem,
 } from 'shared';
 import { Network } from './network';
 import { Renderer } from './renderer';
@@ -38,6 +39,12 @@ interface Snapshot {
 }
 const snapshotBuffers: Map<string, Snapshot[]> = new Map();
 const MAX_SNAPSHOTS = 30;
+
+// Ground items
+const groundItems: Map<string, GroundItem> = new Map();
+
+// Pending pickup — walk to item, then pick up when we arrive
+let pendingPickup: { itemId: string; x: number; y: number } | null = null;
 
 // Camera lerp
 const CAMERA_LERP_SPEED = 0.1;
@@ -139,6 +146,27 @@ async function start(displayName: string) {
         chat.addMessage(msg.displayName, msg.message);
         renderer.showChatBubble(msg.playerId, msg.message);
         break;
+
+      case 'GROUND_ITEMS':
+        groundItems.clear();
+        for (const item of msg.items) {
+          groundItems.set(item.id, item);
+        }
+        renderer.setGroundItems(Array.from(groundItems.values()));
+        break;
+
+      case 'ITEM_SPAWN':
+        groundItems.set(msg.item.id, msg.item);
+        renderer.setGroundItems(Array.from(groundItems.values()));
+        break;
+
+      case 'ITEM_PICKED_UP':
+        groundItems.delete(msg.itemId);
+        renderer.setGroundItems(Array.from(groundItems.values()));
+        if (pendingPickup && pendingPickup.itemId === msg.itemId) {
+          pendingPickup = null;
+        }
+        break;
     }
   });
 
@@ -161,12 +189,38 @@ async function start(displayName: string) {
     }
   }
 
+  // ---- Item interaction helper ----
+  function interactWithItem(item: GroundItem) {
+    if (!myPlayerId) return;
+    const tile = { x: item.x, y: item.y };
+
+    // If already on the tile, pick up immediately
+    const px = Math.round(localPos.x);
+    const py = Math.round(localPos.y);
+    if (px === item.x && py === item.y) {
+      network.send({ type: 'PICKUP', itemId: item.id });
+      return;
+    }
+
+    // Otherwise walk there, then pick up on arrival
+    pendingPickup = { itemId: item.id, x: item.x, y: item.y };
+    moveToTile(tile);
+  }
+
   // ---- Click to move (left click) ----
   renderer.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
     if (e.button !== 0) return; // left click only
     if (!myPlayerId || chat.isFocused) return;
-    if (contextMenu.isVisible) return; // let the menu close handler deal with it
+    if (contextMenu.isVisible) return;
 
+    // Check if clicking on a ground item
+    const clickedItem = renderer.getItemAtScreen(e.clientX, e.clientY);
+    if (clickedItem) {
+      interactWithItem(clickedItem);
+      return;
+    }
+
+    pendingPickup = null;
     const target = renderer.screenToWorld(e.clientX, e.clientY);
     moveToTile(target);
   });
@@ -176,15 +230,23 @@ async function start(displayName: string) {
     e.preventDefault();
     if (!myPlayerId || chat.isFocused) return;
 
+    const clickedItem = renderer.getItemAtScreen(e.clientX, e.clientY);
     const clickedPlayer = renderer.getPlayerAtScreen(e.clientX, e.clientY);
     const tile = renderer.screenToWorld(e.clientX, e.clientY);
 
-    if (clickedPlayer && !clickedPlayer.isLocal) {
+    if (clickedItem) {
+      // Right-clicked on a ground item
+      contextMenu.show(e.clientX, e.clientY, [
+        { label: `— ${clickedItem.itemType} —`, disabled: true, onSelect() {} },
+        { label: `Take ${clickedItem.itemType}`, onSelect() { interactWithItem(clickedItem); } },
+        { label: 'Move Here', onSelect() { pendingPickup = null; moveToTile(tile); } },
+      ]);
+    } else if (clickedPlayer && !clickedPlayer.isLocal) {
       // Right-clicked on another player
       const name = playerStates.get(clickedPlayer.id)?.displayName ?? clickedPlayer.id;
       contextMenu.show(e.clientX, e.clientY, [
         { label: `— ${name} —`, disabled: true, onSelect() {} },
-        { label: 'Move Here', onSelect() { moveToTile(tile); } },
+        { label: 'Move Here', onSelect() { pendingPickup = null; moveToTile(tile); } },
         { label: 'Follow', disabled: true, onSelect() {} },
         { label: 'Trade', disabled: true, onSelect() {} },
         { label: 'Inspect', disabled: true, onSelect() {} },
@@ -192,7 +254,7 @@ async function start(displayName: string) {
     } else {
       // Right-clicked on empty ground
       contextMenu.show(e.clientX, e.clientY, [
-        { label: 'Move Here', onSelect() { moveToTile(tile); } },
+        { label: 'Move Here', onSelect() { pendingPickup = null; moveToTile(tile); } },
       ]);
     }
   });
@@ -252,6 +314,16 @@ async function start(displayName: string) {
         localPath = [];
         localPathIndex = 0;
         renderer.setPathPreview([]);
+      }
+
+      // Check pending pickup — send PICKUP when we arrive on the item's tile
+      if (pendingPickup) {
+        const px = Math.round(localPos.x);
+        const py = Math.round(localPos.y);
+        if (px === pendingPickup.x && py === pendingPickup.y) {
+          network.send({ type: 'PICKUP', itemId: pendingPickup.itemId });
+          pendingPickup = null;
+        }
       }
 
       renderPlayers.push({

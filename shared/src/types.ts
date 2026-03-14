@@ -27,6 +27,15 @@ export enum TileType {
 /** Tiles that cannot be walked on */
 export const BLOCKED_TILES = new Set<TileType>([TileType.Water, TileType.Wall]);
 
+// ---- Ground items ----
+
+export interface GroundItem {
+  id: string;
+  itemType: string;
+  x: number;
+  y: number;
+}
+
 // ---- Client → Server messages ----
 
 export interface ClientMoveToMessage {
@@ -50,7 +59,12 @@ export interface ClientPingMessage {
   timestamp: number;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage;
+export interface ClientPickupMessage {
+  type: 'PICKUP';
+  itemId: string;
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage;
 
 // ---- Server → Client messages ----
 
@@ -103,6 +117,22 @@ export interface ServerPongMessage {
   timestamp: number;
 }
 
+export interface ServerGroundItemsMessage {
+  type: 'GROUND_ITEMS';
+  items: GroundItem[];
+}
+
+export interface ServerItemPickedUpMessage {
+  type: 'ITEM_PICKED_UP';
+  itemId: string;
+  playerId: string;
+}
+
+export interface ServerItemSpawnMessage {
+  type: 'ITEM_SPAWN';
+  item: GroundItem;
+}
+
 export type ServerMessage =
   | ServerWorldStateMessage
   | ServerPlayerJoinMessage
@@ -110,4 +140,7 @@ export type ServerMessage =
   | ServerChatMessage
   | ServerMapMessage
   | ServerJoinedMessage
-  | ServerPongMessage;
+  | ServerPongMessage
+  | ServerGroundItemsMessage
+  | ServerItemPickedUpMessage
+  | ServerItemSpawnMessage;

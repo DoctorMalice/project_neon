@@ -9,11 +9,13 @@ import {
   MAX_CHAT_MESSAGE_LENGTH,
   MAX_DISPLAY_NAME_LENGTH,
   CHAT_HISTORY_SIZE,
+  ITEM_RESPAWN_MS,
   type TileType,
   type Position,
   type ClientMessage,
   type ServerMessage,
   type ServerPlayerState,
+  type GroundItem,
 } from 'shared';
 
 // ---- State ----
@@ -32,6 +34,38 @@ const map: TileType[][] = generateMap();
 const players = new Map<string, ServerPlayer>();
 const chatHistory: ServerMessage[] = [];
 let nextPlayerId = 1;
+let nextItemId = 1;
+
+// ---- Ground items ----
+
+interface ItemSpawnDef {
+  itemType: string;
+  x: number;
+  y: number;
+}
+
+interface ServerGroundItem {
+  id: string;
+  itemType: string;
+  x: number;
+  y: number;
+  active: boolean;
+}
+
+// Define where items spawn on the map
+const ITEM_SPAWN_DEFS: ItemSpawnDef[] = [
+  { itemType: 'Gold Pieces', x: 24, y: 24 },
+  { itemType: 'Gold Pieces', x: 30, y: 15 },
+  { itemType: 'Gold Pieces', x: 15, y: 35 },
+];
+
+const groundItems = new Map<string, ServerGroundItem>();
+
+// Initialize ground items
+for (const def of ITEM_SPAWN_DEFS) {
+  const id = String(nextItemId++);
+  groundItems.set(id, { id, ...def, active: true });
+}
 
 // ---- WebSocket server ----
 
@@ -82,6 +116,12 @@ wss.on('connection', (ws) => {
       send(ws, {
         type: 'WORLD_STATE',
         players: getPlayerStates(),
+      });
+
+      // Send ground items
+      send(ws, {
+        type: 'GROUND_ITEMS',
+        items: getActiveGroundItems(),
       });
 
       // Send chat history
@@ -147,6 +187,26 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'PING') {
       send(ws, { type: 'PONG', timestamp: msg.timestamp });
+      return;
+    }
+
+    if (msg.type === 'PICKUP') {
+      const item = groundItems.get(msg.itemId);
+      if (!item || !item.active) return;
+
+      // Must be on the same tile
+      const px = Math.round(player.position.x);
+      const py = Math.round(player.position.y);
+      if (px !== item.x || py !== item.y) return;
+
+      item.active = false;
+      broadcast({ type: 'ITEM_PICKED_UP', itemId: item.id, playerId: player.id });
+
+      // Schedule respawn
+      setTimeout(() => {
+        item.active = true;
+        broadcast({ type: 'ITEM_SPAWN', item: { id: item.id, itemType: item.itemType, x: item.x, y: item.y } });
+      }, ITEM_RESPAWN_MS);
       return;
     }
   });
@@ -233,6 +293,12 @@ function playerToState(p: ServerPlayer): ServerPlayerState {
 
 function getPlayerStates(): ServerPlayerState[] {
   return Array.from(players.values()).map(playerToState);
+}
+
+function getActiveGroundItems(): GroundItem[] {
+  return Array.from(groundItems.values())
+    .filter((i) => i.active)
+    .map(({ id, itemType, x, y }) => ({ id, itemType, x, y }));
 }
 
 function findSpawnPoint(): Position {

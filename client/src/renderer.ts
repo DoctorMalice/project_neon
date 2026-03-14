@@ -1,5 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js';
-import { TileType, TILE_SIZE, type Position } from 'shared';
+import { TileType, TILE_SIZE, type Position, type GroundItem } from 'shared';
 
 // Tile colors
 const TILE_COLORS: Record<TileType, number> = {
@@ -12,6 +12,7 @@ const TILE_COLORS: Record<TileType, number> = {
 const PLAYER_COLOR = 0x00ffcc;
 const LOCAL_PLAYER_COLOR = 0x00ffff;
 const PATH_PREVIEW_COLOR = 0xffffff;
+const GOLD_COLOR = 0xffd700;
 
 // Zoom
 const MIN_ZOOM = 1.0; // current default = max zoom out
@@ -30,12 +31,14 @@ export class Renderer {
   private app: Application;
   private worldContainer: Container;
   private tileGraphics: Graphics;
+  private itemGraphics: Graphics;
   private playerGraphics: Graphics;
   private pathGraphics: Graphics;
 
   private map: TileType[][] = [];
   private camera: Position = { x: 0, y: 0 };
   private players: RenderPlayer[] = [];
+  private groundItems: GroundItem[] = [];
   private pathPreview: Position[] = [];
   private zoom = MIN_ZOOM;
   private targetZoom = MIN_ZOOM;
@@ -50,6 +53,7 @@ export class Renderer {
     this.app = new Application();
     this.worldContainer = new Container();
     this.tileGraphics = new Graphics();
+    this.itemGraphics = new Graphics();
     this.playerGraphics = new Graphics();
     this.pathGraphics = new Graphics();
     this.labelsContainer = document.getElementById('labels-container')!;
@@ -65,6 +69,7 @@ export class Renderer {
     document.getElementById('game-container')!.prepend(this.app.canvas);
 
     this.worldContainer.addChild(this.tileGraphics);
+    this.worldContainer.addChild(this.itemGraphics);
     this.worldContainer.addChild(this.pathGraphics);
     this.worldContainer.addChild(this.playerGraphics);
     this.app.stage.addChild(this.worldContainer);
@@ -99,6 +104,27 @@ export class Renderer {
       }
     }
     return null;
+  }
+
+  /** Returns the ground item at the given screen coordinates, or null */
+  getItemAtScreen(sx: number, sy: number): GroundItem | null {
+    const ts = this.tileSize;
+    const size = ts * 0.35;
+    for (const item of this.groundItems) {
+      const { sx: ix, sy: iy } = this.worldToScreen(item.x, item.y);
+      const cx = ix + ts / 2;
+      const cy = iy + ts / 2;
+      const dx = sx - cx;
+      const dy = sy - cy;
+      if (Math.abs(dx) <= size && Math.abs(dy) <= size) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  setGroundItems(items: GroundItem[]) {
+    this.groundItems = items;
   }
 
   setMap(tiles: TileType[][]) {
@@ -202,6 +228,28 @@ export class Renderer {
         this.tileGraphics.rect(sx, sy, ts, ts);
         this.tileGraphics.stroke({ width: 1, color: 0x000000, alpha: 0.15 });
       }
+    }
+
+    // ---- Draw ground items ----
+    this.itemGraphics.clear();
+    for (const item of this.groundItems) {
+      const { sx, sy } = this.worldToScreen(item.x, item.y);
+      const cx = sx + ts / 2;
+      const cy = sy + ts / 2;
+      const size = ts * 0.25;
+      // Gold coin — small diamond/square rotated 45deg
+      this.itemGraphics.moveTo(cx, cy - size);
+      this.itemGraphics.lineTo(cx + size, cy);
+      this.itemGraphics.lineTo(cx, cy + size);
+      this.itemGraphics.lineTo(cx - size, cy);
+      this.itemGraphics.closePath();
+      this.itemGraphics.fill(GOLD_COLOR);
+      this.itemGraphics.moveTo(cx, cy - size);
+      this.itemGraphics.lineTo(cx + size, cy);
+      this.itemGraphics.lineTo(cx, cy + size);
+      this.itemGraphics.lineTo(cx - size, cy);
+      this.itemGraphics.closePath();
+      this.itemGraphics.stroke({ width: 1, color: 0x000000, alpha: 0.4 });
     }
 
     // ---- Draw path preview ----

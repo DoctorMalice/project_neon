@@ -18,3 +18,6 @@ export const CHAT_HISTORY_SIZE = 100;
 
 // Player
 export const MAX_DISPLAY_NAME_LENGTH = 16;
+
+// Items
+export const ITEM_RESPAWN_MS = 10_000;
