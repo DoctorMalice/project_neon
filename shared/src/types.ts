@@ -27,6 +27,13 @@ export enum TileType {
 /** Tiles that cannot be walked on */
 export const BLOCKED_TILES = new Set<TileType>([TileType.Water, TileType.Wall]);
 
+// ---- Inventory ----
+
+export interface InventoryItem {
+  itemType: string;
+  quantity: number;
+}
+
 // ---- Ground items ----
 
 export interface GroundItem {
@@ -133,6 +140,11 @@ export interface ServerItemSpawnMessage {
   item: GroundItem;
 }
 
+export interface ServerInventoryMessage {
+  type: 'INVENTORY';
+  items: InventoryItem[];
+}
+
 export type ServerMessage =
   | ServerWorldStateMessage
   | ServerPlayerJoinMessage
@@ -143,4 +155,5 @@ export type ServerMessage =
   | ServerPongMessage
   | ServerGroundItemsMessage
   | ServerItemPickedUpMessage
-  | ServerItemSpawnMessage;
+  | ServerItemSpawnMessage
+  | ServerInventoryMessage;

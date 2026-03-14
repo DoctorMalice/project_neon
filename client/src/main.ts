@@ -12,6 +12,7 @@ import { Renderer } from './renderer';
 import { Chat } from './chat';
 import { DebugOverlay } from './debug';
 import { ContextMenu } from './context-menu';
+import { Inventory } from './inventory';
 
 // ---- State ----
 let myPlayerId: string | null = null;
@@ -59,6 +60,7 @@ const renderer = new Renderer();
 const chat = new Chat(network);
 const debug = new DebugOverlay(network);
 const contextMenu = new ContextMenu();
+const inventory = new Inventory();
 
 async function start(displayName: string) {
   await renderer.init();
@@ -166,6 +168,10 @@ async function start(displayName: string) {
         if (pendingPickup && pendingPickup.itemId === msg.itemId) {
           pendingPickup = null;
         }
+        break;
+
+      case 'INVENTORY':
+        inventory.update(msg.items);
         break;
     }
   });

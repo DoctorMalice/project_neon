@@ -16,6 +16,7 @@ import {
   type ServerMessage,
   type ServerPlayerState,
   type GroundItem,
+  type InventoryItem,
 } from 'shared';
 
 // ---- State ----
@@ -60,6 +61,7 @@ const ITEM_SPAWN_DEFS: ItemSpawnDef[] = [
 ];
 
 const groundItems = new Map<string, ServerGroundItem>();
+const inventories = new Map<string, InventoryItem[]>();
 
 // Initialize ground items
 for (const def of ITEM_SPAWN_DEFS) {
@@ -123,6 +125,10 @@ wss.on('connection', (ws) => {
         type: 'GROUND_ITEMS',
         items: getActiveGroundItems(),
       });
+
+      // Send initial empty inventory
+      inventories.set(id, []);
+      send(ws, { type: 'INVENTORY', items: [] });
 
       // Send chat history
       for (const chatMsg of chatHistory) {
@@ -202,6 +208,17 @@ wss.on('connection', (ws) => {
       item.active = false;
       broadcast({ type: 'ITEM_PICKED_UP', itemId: item.id, playerId: player.id });
 
+      // Update inventory
+      const inv = inventories.get(player.id) ?? [];
+      const existing = inv.find((i) => i.itemType === item.itemType);
+      if (existing) {
+        existing.quantity++;
+      } else {
+        inv.push({ itemType: item.itemType, quantity: 1 });
+      }
+      inventories.set(player.id, inv);
+      send(ws, { type: 'INVENTORY', items: inv });
+
       // Schedule respawn
       setTimeout(() => {
         item.active = true;
@@ -214,6 +231,7 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (player) {
       players.delete(player.id);
+      inventories.delete(player.id);
       broadcast({ type: 'PLAYER_LEAVE', playerId: player.id });
       console.log(`${player.displayName} (${player.id}) left`);
     }

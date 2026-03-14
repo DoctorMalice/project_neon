@@ -118,6 +118,55 @@
       color: #555;
     }
 
+    /* ---- Inventory ---- */
+    #inventory-btn {
+      position: absolute; bottom: 12px; right: 12px;
+      padding: 8px 16px;
+      background: rgba(15, 15, 20, 0.85);
+      border: 1px solid rgba(0, 255, 255, 0.3);
+      border-radius: 6px;
+      color: #0ff; font-size: 13px; font-weight: 600;
+      cursor: pointer; user-select: none;
+      z-index: 60;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #inventory-btn:hover {
+      background: rgba(0, 255, 255, 0.12);
+      border-color: #0ff;
+    }
+    #inventory-panel {
+      position: absolute; bottom: 50px; right: 12px;
+      width: 220px;
+      background: rgba(15, 15, 20, 0.92);
+      border: 1px solid rgba(0, 255, 255, 0.25);
+      border-radius: 8px;
+      display: flex; flex-direction: column;
+      z-index: 60;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      pointer-events: auto;
+    }
+    .inventory-header {
+      padding: 10px 14px;
+      color: #0ff; font-size: 14px; font-weight: 700;
+      border-bottom: 1px solid rgba(0, 255, 255, 0.15);
+    }
+    .inventory-list {
+      padding: 8px 14px;
+      max-height: 240px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.2) transparent;
+    }
+    .inventory-item {
+      padding: 4px 0;
+      color: #ddd; font-size: 13px;
+    }
+    .inventory-empty {
+      padding: 4px 0;
+      color: #555; font-size: 13px;
+      font-style: italic;
+    }
+
     .chat-bubble {
       position: absolute;
       background: rgba(0,0,0,0.75);
