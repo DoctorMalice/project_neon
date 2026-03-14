@@ -40,6 +40,7 @@ interface CombatInstance {
   actionTimeout: ReturnType<typeof setTimeout> | null;
   onEnd: (combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>) => void;
   onEnemyDied: (spawn: ServerEnemySpawn) => void;
+  onPlayerFled: (playerId: string) => void;
 }
 
 // ---- State ----
@@ -201,9 +202,28 @@ function resolveRound(combat: CombatInstance): void {
           crit: false, dodged: false, defended: false, immune: false,
           message: `${ally.name} fled from combat!`,
         });
-        combat.state.phase = 'fled';
-        endCombat(combat, 'fled');
-        return;
+        // Remove only this player from combat
+        ally.alive = false;
+        const player = combat.players.get(ally.id);
+        if (player) {
+          sendToPlayer(player, {
+            type: 'COMBAT_END',
+            state: combat.state,
+            result: 'fled',
+            xpGained: 0,
+            loot: [],
+          });
+        }
+        combat.players.delete(ally.id);
+        combat.playerActions.delete(ally.id);
+        combat.onPlayerFled(ally.id);
+
+        // If no allies left, end combat entirely
+        if (combat.players.size === 0 || combat.state.allies.every(a => !a.alive)) {
+          combat.state.phase = 'defeat';
+          endCombat(combat, 'defeat');
+          return;
+        }
       } else {
         combat.state.log.push({
           actor: ally.name, target: '', damage: 0,
@@ -362,6 +382,7 @@ export function createCombat(
   enemySpawnId: string,
   onEnd: CombatInstance['onEnd'],
   onEnemyDied: CombatInstance['onEnemyDied'],
+  onPlayerFled: CombatInstance['onPlayerFled'],
 ): string | null {
   const spawn = enemySpawns.get(enemySpawnId);
   if (!spawn || !spawn.active) return null;
@@ -398,6 +419,7 @@ export function createCombat(
     actionTimeout: null,
     onEnd,
     onEnemyDied,
+    onPlayerFled,
   };
 
   combats.set(combatId, combat);

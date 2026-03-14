@@ -80,6 +80,13 @@ initEnemySpawns();
 
 const playerCombats = new Map<string, string>(); // playerId → combatId
 
+function snapPlayerToTile(p: ServerPlayer): void {
+  p.position.x = Math.round(p.position.x);
+  p.position.y = Math.round(p.position.y);
+  p.path = [];
+  p.pathIndex = 0;
+}
+
 function addToInventory(playerId: string, itemType: string, quantity: number): void {
   const inv = inventories.get(playerId) ?? [];
   const existing = inv.find((i) => i.itemType === itemType);
@@ -123,6 +130,10 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
       }
     }
   }
+}
+
+function onPlayerFled(playerId: string): void {
+  playerCombats.delete(playerId);
 }
 
 function onEnemyDied(spawn: { id: string; defId: string; active: boolean; x: number; y: number }): void {
@@ -328,9 +339,7 @@ wss.on('connection', (ws) => {
         );
         if (joined) {
           playerCombats.set(player.id, existingCombatId);
-          // Stop movement
-          player.path = [];
-          player.pathIndex = 0;
+          snapPlayerToTile(player);
         }
         return;
       }
@@ -341,12 +350,11 @@ wss.on('connection', (ws) => {
         msg.enemySpawnId,
         onCombatEnd,
         onEnemyDied,
+        onPlayerFled,
       );
       if (combatId) {
         playerCombats.set(player.id, combatId);
-        // Stop movement
-        player.path = [];
-        player.pathIndex = 0;
+        snapPlayerToTile(player);
         // Broadcast enemy combat state to all clients
         const def = ENEMY_DEFS[spawn.defId];
         if (def) {
@@ -380,8 +388,7 @@ wss.on('connection', (ws) => {
       );
       if (joined) {
         playerCombats.set(player.id, msg.combatId);
-        player.path = [];
-        player.pathIndex = 0;
+        snapPlayerToTile(player);
       }
       return;
     }
