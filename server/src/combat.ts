@@ -482,3 +482,8 @@ export function getCombatForEnemy(enemySpawnId: string): string | null {
   }
   return null;
 }
+
+export function getEnemySpawnForCombat(combatId: string): ServerEnemySpawn | null {
+  const combat = combats.get(combatId);
+  return combat?.enemySpawn ?? null;
+}

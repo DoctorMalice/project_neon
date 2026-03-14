@@ -26,6 +26,7 @@ interface RenderPlayer {
   x: number;
   y: number;
   isLocal: boolean;
+  inCombat?: boolean;
 }
 
 export class Renderer {
@@ -51,6 +52,10 @@ export class Renderer {
 
   // Chat bubbles
   private bubbleElements: Map<string, { el: HTMLDivElement; timeout: ReturnType<typeof setTimeout> }> = new Map();
+
+  // Combat labels (reused each frame)
+  private combatLabels: HTMLDivElement[] = [];
+  private combatLabelPool: HTMLDivElement[] = [];
 
   constructor() {
     this.app = new Application();
@@ -329,6 +334,49 @@ export class Renderer {
         bubble.el.style.left = `${centerX}px`;
         bubble.el.style.top = `${sy - 4}px`;
       }
+    }
+
+    // ---- Draw "IN COMBAT" labels ----
+    // Return unused labels to pool
+    for (const label of this.combatLabels) {
+      label.style.display = 'none';
+      this.combatLabelPool.push(label);
+    }
+    this.combatLabels = [];
+
+    const getCombatLabel = (): HTMLDivElement => {
+      const existing = this.combatLabelPool.pop();
+      if (existing) {
+        existing.style.display = '';
+        return existing;
+      }
+      const el = document.createElement('div');
+      el.className = 'combat-label';
+      el.textContent = 'IN COMBAT';
+      this.labelsContainer.appendChild(el);
+      return el;
+    };
+
+    // Labels for players in combat
+    for (const p of this.players) {
+      if (!p.inCombat) continue;
+      const { sx, sy } = this.worldToScreen(p.x, p.y);
+      const centerX = sx + ts / 2;
+      const label = getCombatLabel();
+      label.style.left = `${centerX}px`;
+      label.style.top = `${sy - 6}px`;
+      this.combatLabels.push(label);
+    }
+
+    // Labels for enemies in combat
+    for (const enemy of this.mapEnemies) {
+      if (!enemy.combatId) continue;
+      const { sx, sy } = this.worldToScreen(enemy.x, enemy.y);
+      const centerX = sx + ts / 2;
+      const label = getCombatLabel();
+      label.style.left = `${centerX}px`;
+      label.style.top = `${sy - 6}px`;
+      this.combatLabels.push(label);
     }
   }
 }

@@ -135,4 +135,5 @@ export interface MapEnemy {
   name: string;
   x: number;
   y: number;
+  combatId: string | null;
 }

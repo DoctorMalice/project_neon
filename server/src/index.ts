@@ -108,6 +108,21 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
       addToInventory(playerId, item.itemType, item.quantity);
     }
   }
+  // If enemy survived (fled/defeat), broadcast that it's no longer in combat
+  for (const spawn of enemySpawns.values()) {
+    if (spawn.active) {
+      const stillInCombat = combat.getCombatForEnemy(spawn.id);
+      if (!stillInCombat) {
+        const def = ENEMY_DEFS[spawn.defId];
+        if (def) {
+          broadcast({
+            type: 'ENEMY_SPAWN',
+            enemy: { id: spawn.id, defId: spawn.defId, name: def.name, x: spawn.x, y: spawn.y, combatId: null },
+          });
+        }
+      }
+    }
+  }
 }
 
 function onEnemyDied(spawn: { id: string; defId: string; active: boolean; x: number; y: number }): void {
@@ -120,7 +135,7 @@ function onEnemyDied(spawn: { id: string; defId: string; active: boolean; x: num
     spawn.active = true;
     broadcast({
       type: 'ENEMY_SPAWN',
-      enemy: { id: spawn.id, defId: spawn.defId, name: def.name, x: spawn.x, y: spawn.y },
+      enemy: { id: spawn.id, defId: spawn.defId, name: def.name, x: spawn.x, y: spawn.y, combatId: null },
     });
   }, def.respawnMs);
 }
@@ -185,7 +200,7 @@ wss.on('connection', (ws) => {
       // Send enemy spawns
       send(ws, {
         type: 'ENEMY_SPAWNS',
-        enemies: getActiveMapEnemies(),
+        enemies: getActiveMapEnemies(combat.getCombatForEnemy),
       });
 
       // Send initial empty inventory
@@ -298,10 +313,11 @@ wss.on('connection', (ws) => {
       const spawn = enemySpawns.get(msg.enemySpawnId);
       if (!spawn || !spawn.active) return;
 
-      // Check range — generous to account for client prediction running ahead of server
-      const dx = player.position.x - spawn.x;
-      const dy = player.position.y - spawn.y;
-      if (dx * dx + dy * dy > COMBAT_ENGAGE_RANGE * COMBAT_ENGAGE_RANGE + 1) return;
+      // Check adjacency — player should be on a neighboring tile (Manhattan ≤ 1)
+      // Generous threshold accounts for client prediction running ahead of server
+      const dx = Math.abs(player.position.x - spawn.x);
+      const dy = Math.abs(player.position.y - spawn.y);
+      if (dx > COMBAT_ENGAGE_RANGE || dy > COMBAT_ENGAGE_RANGE) return;
 
       // Check if enemy is already in combat (co-op join)
       const existingCombatId = combat.getCombatForEnemy(msg.enemySpawnId);
@@ -331,6 +347,14 @@ wss.on('connection', (ws) => {
         // Stop movement
         player.path = [];
         player.pathIndex = 0;
+        // Broadcast enemy combat state to all clients
+        const def = ENEMY_DEFS[spawn.defId];
+        if (def) {
+          broadcast({
+            type: 'ENEMY_SPAWN',
+            enemy: { id: spawn.id, defId: spawn.defId, name: def.name, x: spawn.x, y: spawn.y, combatId },
+          });
+        }
       }
       return;
     }
@@ -343,6 +367,13 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'JOIN_COMBAT') {
       if (playerCombats.has(player.id)) return;
+      // Check range to the enemy in this combat
+      const enemySpawn = combat.getEnemySpawnForCombat(msg.combatId);
+      if (enemySpawn) {
+        const dx = Math.abs(player.position.x - enemySpawn.x);
+        const dy = Math.abs(player.position.y - enemySpawn.y);
+        if (dx > COMBAT_ENGAGE_RANGE || dy > COMBAT_ENGAGE_RANGE) return;
+      }
       const joined = combat.joinCombat(
         { id: player.id, displayName: player.displayName, ws: player.ws },
         msg.combatId,
@@ -443,6 +474,7 @@ function playerToState(p: ServerPlayer): ServerPlayerState {
     y: p.position.y,
     targetX: target?.x ?? null,
     targetY: target?.y ?? null,
+    combatId: playerCombats.get(p.id) ?? null,
   };
 }
 

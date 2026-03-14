@@ -55,6 +55,9 @@ let pendingPickup: { itemId: string; x: number; y: number } | null = null;
 // Pending attack — walk to enemy, then attack when we arrive
 let pendingAttack: { enemyId: string; x: number; y: number } | null = null;
 
+// Pending join combat — walk to enemy in combat, then join when we arrive
+let pendingJoinCombat: { combatId: string; x: number; y: number } | null = null;
+
 // Camera lerp
 const CAMERA_LERP_SPEED = 0.1;
 const cameraPos: Position = { x: 0, y: 0 };
@@ -91,6 +94,7 @@ async function start(displayName: string) {
         renderer.setPathPreview([]);
         pendingPickup = null;
         pendingAttack = null;
+        pendingJoinCombat = null;
       }
       return;
     }
@@ -260,24 +264,78 @@ async function start(displayName: string) {
     moveToTile(tile);
   }
 
+  // ---- Find adjacent tile to a target ----
+  function findAdjacentTile(targetX: number, targetY: number): Position | null {
+    const dirs = [
+      { x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 },
+    ];
+    const from = { x: Math.round(localPos.x), y: Math.round(localPos.y) };
+
+    // If already adjacent, return current tile
+    const dx = Math.abs(from.x - targetX);
+    const dy = Math.abs(from.y - targetY);
+    if (dx + dy === 1) return from;
+
+    // Find the walkable adjacent tile with the shortest path
+    let best: Position | null = null;
+    let bestLen = Infinity;
+    for (const dir of dirs) {
+      const adj = { x: targetX + dir.x, y: targetY + dir.y };
+      if (!isWalkable(map, adj)) continue;
+      const path = findPath(map, from, adj);
+      if (path && path.length < bestLen) {
+        bestLen = path.length;
+        best = adj;
+      }
+    }
+    return best;
+  }
+
   // ---- Enemy interaction helper ----
   function attackEnemy(enemy: MapEnemy) {
     if (!myPlayerId) return;
 
-    // If already in range, send attack immediately
+    // If already adjacent, send attack immediately
     const px = Math.round(localPos.x);
     const py = Math.round(localPos.y);
-    const dx = px - enemy.x;
-    const dy = py - enemy.y;
-    if (dx * dx + dy * dy <= 1.5 * 1.5) {
+    const dx = Math.abs(px - enemy.x);
+    const dy = Math.abs(py - enemy.y);
+    if (dx + dy <= 1 && !(dx === 0 && dy === 0)) {
       network.send({ type: 'ATTACK_ENEMY', enemySpawnId: enemy.id });
       return;
     }
 
-    // Otherwise walk there, then attack on arrival
-    pendingAttack = { enemyId: enemy.id, x: enemy.x, y: enemy.y };
+    // Find an adjacent tile and walk there
+    const adj = findAdjacentTile(enemy.x, enemy.y);
+    if (!adj) return;
+
+    pendingAttack = { enemyId: enemy.id, x: adj.x, y: adj.y };
     pendingPickup = null;
-    moveToTile({ x: enemy.x, y: enemy.y });
+    moveToTile(adj);
+  }
+
+  // ---- Join combat helper ----
+  function joinCombat(combatId: string, targetX: number, targetY: number) {
+    if (!myPlayerId) return;
+
+    // If already adjacent, join immediately
+    const px = Math.round(localPos.x);
+    const py = Math.round(localPos.y);
+    const dx = Math.abs(px - targetX);
+    const dy = Math.abs(py - targetY);
+    if (dx + dy <= 1 && !(dx === 0 && dy === 0)) {
+      network.send({ type: 'JOIN_COMBAT', combatId });
+      return;
+    }
+
+    // Walk to adjacent tile, then join
+    const adj = findAdjacentTile(targetX, targetY);
+    if (!adj) return;
+
+    pendingJoinCombat = { combatId, x: adj.x, y: adj.y };
+    pendingPickup = null;
+    pendingAttack = null;
+    moveToTile(adj);
   }
 
   // ---- Click to move (left click) ----
@@ -303,9 +361,16 @@ async function start(displayName: string) {
 
     pendingPickup = null;
     pendingAttack = null;
+    pendingJoinCombat = null;
     const target = renderer.screenToWorld(e.clientX, e.clientY);
     moveToTile(target);
   });
+
+  function clearPending() {
+    pendingPickup = null;
+    pendingAttack = null;
+    pendingJoinCombat = null;
+  }
 
   // ---- Right-click context menu ----
   renderer.canvas.addEventListener('contextmenu', (e: MouseEvent) => {
@@ -319,33 +384,53 @@ async function start(displayName: string) {
     const tile = renderer.screenToWorld(e.clientX, e.clientY);
 
     if (clickedEnemy) {
-      // Right-clicked on an enemy
-      contextMenu.show(e.clientX, e.clientY, [
-        { label: `— ${clickedEnemy.name} —`, disabled: true, onSelect() {} },
-        { label: `Attack ${clickedEnemy.name}`, onSelect() { attackEnemy(clickedEnemy); } },
-        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
-      ]);
+      if (clickedEnemy.combatId) {
+        // Enemy is already in combat — offer to join
+        const cid = clickedEnemy.combatId;
+        contextMenu.show(e.clientX, e.clientY, [
+          { label: `— ${clickedEnemy.name} (In Combat) —`, disabled: true, onSelect() {} },
+          { label: 'Join Combat', onSelect() { joinCombat(cid, clickedEnemy.x, clickedEnemy.y); } },
+          { label: 'Move Here', onSelect() { clearPending(); moveToTile(tile); } },
+        ]);
+      } else {
+        // Enemy is idle
+        contextMenu.show(e.clientX, e.clientY, [
+          { label: `— ${clickedEnemy.name} —`, disabled: true, onSelect() {} },
+          { label: `Attack ${clickedEnemy.name}`, onSelect() { attackEnemy(clickedEnemy); } },
+          { label: 'Move Here', onSelect() { clearPending(); moveToTile(tile); } },
+        ]);
+      }
     } else if (clickedItem) {
-      // Right-clicked on a ground item
       contextMenu.show(e.clientX, e.clientY, [
         { label: `— ${clickedItem.itemType} —`, disabled: true, onSelect() {} },
         { label: `Take ${clickedItem.itemType}`, onSelect() { interactWithItem(clickedItem); } },
-        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
+        { label: 'Move Here', onSelect() { clearPending(); moveToTile(tile); } },
       ]);
     } else if (clickedPlayer && !clickedPlayer.isLocal) {
-      // Right-clicked on another player
       const name = playerStates.get(clickedPlayer.id)?.displayName ?? clickedPlayer.id;
-      contextMenu.show(e.clientX, e.clientY, [
+      const state = playerStates.get(clickedPlayer.id);
+      const actions: Array<{ label: string; disabled?: boolean; onSelect: () => void }> = [
         { label: `— ${name} —`, disabled: true, onSelect() {} },
-        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
+      ];
+      // If this player is in combat, offer to join
+      if (state?.combatId) {
+        const cid = state.combatId;
+        // Find the enemy they're fighting to get its position for adjacency walk
+        const enemyInCombat = Array.from(enemies.values()).find(e => e.combatId === cid);
+        if (enemyInCombat) {
+          actions.push({ label: 'Join Combat', onSelect() { joinCombat(cid, enemyInCombat.x, enemyInCombat.y); } });
+        }
+      }
+      actions.push(
+        { label: 'Move Here', onSelect() { clearPending(); moveToTile(tile); } },
         { label: 'Follow', disabled: true, onSelect() {} },
         { label: 'Trade', disabled: true, onSelect() {} },
         { label: 'Inspect', disabled: true, onSelect() {} },
-      ]);
+      );
+      contextMenu.show(e.clientX, e.clientY, actions);
     } else {
-      // Right-clicked on empty ground
       contextMenu.show(e.clientX, e.clientY, [
-        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
+        { label: 'Move Here', onSelect() { clearPending(); moveToTile(tile); } },
       ]);
     }
   });
@@ -356,7 +441,7 @@ async function start(displayName: string) {
     const dt = (now - lastFrameTime) / 1000; // delta in seconds
     lastFrameTime = now;
 
-    const renderPlayers: Array<{ id: string; x: number; y: number; isLocal: boolean }> = [];
+    const renderPlayers: Array<{ id: string; x: number; y: number; isLocal: boolean; inCombat?: boolean }> = [];
 
     // ---- Local player: client-side prediction ----
     if (myPlayerId && localInitialized) {
@@ -420,7 +505,7 @@ async function start(displayName: string) {
         }
       }
 
-      // Check pending attack — send ATTACK_ENEMY when we arrive on the enemy's tile
+      // Check pending attack — send ATTACK_ENEMY when we arrive at the adjacent tile
       if (pendingAttack) {
         const px = Math.round(localPos.x);
         const py = Math.round(localPos.y);
@@ -430,11 +515,22 @@ async function start(displayName: string) {
         }
       }
 
+      // Check pending join combat — send JOIN_COMBAT when we arrive at the adjacent tile
+      if (pendingJoinCombat) {
+        const px = Math.round(localPos.x);
+        const py = Math.round(localPos.y);
+        if (px === pendingJoinCombat.x && py === pendingJoinCombat.y) {
+          network.send({ type: 'JOIN_COMBAT', combatId: pendingJoinCombat.combatId });
+          pendingJoinCombat = null;
+        }
+      }
+
       renderPlayers.push({
         id: myPlayerId,
         x: localPos.x,
         y: localPos.y,
         isLocal: true,
+        inCombat: combatManager.inCombat,
       });
     }
 
@@ -446,7 +542,7 @@ async function start(displayName: string) {
 
       const buf = snapshotBuffers.get(id);
       if (!buf || buf.length === 0) {
-        renderPlayers.push({ id, x: state.x, y: state.y, isLocal: false });
+        renderPlayers.push({ id, x: state.x, y: state.y, isLocal: false, inCombat: !!state.combatId });
         continue;
       }
 
@@ -473,7 +569,7 @@ async function start(displayName: string) {
         y = a.y + (b.y - a.y) * t;
       }
 
-      renderPlayers.push({ id, x, y, isLocal: false });
+      renderPlayers.push({ id, x, y, isLocal: false, inCombat: !!playerStates.get(id)?.combatId });
     }
 
     // Camera lerps toward local player

@@ -77,13 +77,20 @@ export function initEnemySpawns(): void {
   }
 }
 
-export function getActiveMapEnemies(): MapEnemy[] {
+export function getActiveMapEnemies(getCombatIdForEnemy?: (spawnId: string) => string | null): MapEnemy[] {
   const result: MapEnemy[] = [];
   for (const spawn of enemySpawns.values()) {
     if (!spawn.active) continue;
     const def = ENEMY_DEFS[spawn.defId];
     if (!def) continue;
-    result.push({ id: spawn.id, defId: spawn.defId, name: def.name, x: spawn.x, y: spawn.y });
+    result.push({
+      id: spawn.id,
+      defId: spawn.defId,
+      name: def.name,
+      x: spawn.x,
+      y: spawn.y,
+      combatId: getCombatIdForEnemy ? getCombatIdForEnemy(spawn.id) : null,
+    });
   }
   return result;
 }

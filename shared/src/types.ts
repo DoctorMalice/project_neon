@@ -84,6 +84,7 @@ export interface ServerPlayerState {
   y: number;
   targetX: number | null;
   targetY: number | null;
+  combatId: string | null;
 }
 
 export interface ServerWorldStateMessage {
