@@ -17,6 +17,10 @@ export class DebugOverlay {
   private fps = 0;
   private lastFpsTime = performance.now();
 
+  // Memory tracking (sampled once per second alongside FPS)
+  private heapUsed = '';
+  private heapLimit = '';
+
   constructor(network: Network) {
     this.network = network;
 
@@ -42,17 +46,29 @@ export class DebugOverlay {
       this.fps = Math.round((this.frameCount / elapsed) * 1000);
       this.frameCount = 0;
       this.lastFpsTime = now;
+
+      const mem = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+      if (mem) {
+        this.heapUsed = `Heap: ${formatBytes(mem.usedJSHeapSize)} / ${formatBytes(mem.totalJSHeapSize)}`;
+        this.heapLimit = `Heap limit: ${formatBytes(mem.jsHeapSizeLimit)}`;
+      }
     }
 
     const perMin = this.network.getBytesPerMinute();
 
-    this.el.innerHTML = [
+    const lines = [
       `FPS: ${this.fps}`,
       `Ping: ${this.network.latency.toFixed(0)} ms`,
       `Players: ${this.playerCount}`,
       `Map tiles: ${this.mapTiles.toLocaleString()}`,
       `Data recv: ${formatBytes(this.network.bytesReceived)} (${formatBytes(perMin.recv)}/min)`,
       `Data sent: ${formatBytes(this.network.bytesSent)} (${formatBytes(perMin.sent)}/min)`,
-    ].join('<br>');
+    ];
+
+    if (this.heapUsed) {
+      lines.push(this.heapUsed, this.heapLimit);
+    }
+
+    this.el.innerHTML = lines.join('<br>');
   }
 }
