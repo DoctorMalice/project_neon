@@ -6,6 +6,7 @@ import {
   type ServerPlayerState,
   type Position,
   type GroundItem,
+  type MapEnemy,
 } from 'shared';
 import { Network } from './network';
 import { Renderer } from './renderer';
@@ -13,6 +14,7 @@ import { Chat } from './chat';
 import { DebugOverlay } from './debug';
 import { ContextMenu } from './context-menu';
 import { Inventory } from './inventory';
+import { Combat } from './combat';
 
 // ---- State ----
 let myPlayerId: string | null = null;
@@ -44,8 +46,14 @@ const MAX_SNAPSHOTS = 30;
 // Ground items
 const groundItems: Map<string, GroundItem> = new Map();
 
+// Enemies
+const enemies: Map<string, MapEnemy> = new Map();
+
 // Pending pickup — walk to item, then pick up when we arrive
 let pendingPickup: { itemId: string; x: number; y: number } | null = null;
+
+// Pending attack — walk to enemy, then attack when we arrive
+let pendingAttack: { enemyId: string; x: number; y: number } | null = null;
 
 // Camera lerp
 const CAMERA_LERP_SPEED = 0.1;
@@ -61,6 +69,7 @@ const chat = new Chat(network);
 const debug = new DebugOverlay(network);
 const contextMenu = new ContextMenu();
 const inventory = new Inventory();
+const combatManager = new Combat(network);
 
 async function start(displayName: string) {
   await renderer.init();
@@ -72,9 +81,24 @@ async function start(displayName: string) {
   network.send({ type: 'JOIN', displayName });
 
   network.onMessage((msg) => {
+    // Let combat manager handle combat messages first
+    if (msg.type === 'COMBAT_START' || msg.type === 'COMBAT_UPDATE' || msg.type === 'COMBAT_END') {
+      combatManager.handleMessage(msg);
+      if (msg.type === 'COMBAT_START') {
+        // Clear movement when entering combat
+        localPath = [];
+        localPathIndex = 0;
+        renderer.setPathPreview([]);
+        pendingPickup = null;
+        pendingAttack = null;
+      }
+      return;
+    }
+
     switch (msg.type) {
       case 'JOINED':
         myPlayerId = msg.playerId;
+        combatManager.setPlayerId(msg.playerId);
         break;
 
       case 'MAP':
@@ -173,6 +197,28 @@ async function start(displayName: string) {
       case 'INVENTORY':
         inventory.update(msg.items);
         break;
+
+      // Enemy spawn messages
+      case 'ENEMY_SPAWNS':
+        enemies.clear();
+        for (const enemy of msg.enemies) {
+          enemies.set(enemy.id, enemy);
+        }
+        renderer.setEnemies(Array.from(enemies.values()));
+        break;
+
+      case 'ENEMY_SPAWN':
+        enemies.set(msg.enemy.id, msg.enemy);
+        renderer.setEnemies(Array.from(enemies.values()));
+        break;
+
+      case 'ENEMY_DESPAWN':
+        enemies.delete(msg.enemyId);
+        renderer.setEnemies(Array.from(enemies.values()));
+        if (pendingAttack && pendingAttack.enemyId === msg.enemyId) {
+          pendingAttack = null;
+        }
+        break;
     }
   });
 
@@ -210,7 +256,28 @@ async function start(displayName: string) {
 
     // Otherwise walk there, then pick up on arrival
     pendingPickup = { itemId: item.id, x: item.x, y: item.y };
+    pendingAttack = null;
     moveToTile(tile);
+  }
+
+  // ---- Enemy interaction helper ----
+  function attackEnemy(enemy: MapEnemy) {
+    if (!myPlayerId) return;
+
+    // If already in range, send attack immediately
+    const px = Math.round(localPos.x);
+    const py = Math.round(localPos.y);
+    const dx = px - enemy.x;
+    const dy = py - enemy.y;
+    if (dx * dx + dy * dy <= 1.5 * 1.5) {
+      network.send({ type: 'ATTACK_ENEMY', enemySpawnId: enemy.id });
+      return;
+    }
+
+    // Otherwise walk there, then attack on arrival
+    pendingAttack = { enemyId: enemy.id, x: enemy.x, y: enemy.y };
+    pendingPickup = null;
+    moveToTile({ x: enemy.x, y: enemy.y });
   }
 
   // ---- Click to move (left click) ----
@@ -218,6 +285,7 @@ async function start(displayName: string) {
     if (e.button !== 0) return; // left click only
     if (!myPlayerId || chat.isFocused) return;
     if (contextMenu.isVisible) return;
+    if (combatManager.inCombat) return;
 
     // Check if clicking on a ground item
     const clickedItem = renderer.getItemAtScreen(e.clientX, e.clientY);
@@ -226,7 +294,15 @@ async function start(displayName: string) {
       return;
     }
 
+    // Check if clicking on an enemy
+    const clickedEnemy = renderer.getEnemyAtScreen(e.clientX, e.clientY);
+    if (clickedEnemy) {
+      attackEnemy(clickedEnemy);
+      return;
+    }
+
     pendingPickup = null;
+    pendingAttack = null;
     const target = renderer.screenToWorld(e.clientX, e.clientY);
     moveToTile(target);
   });
@@ -235,24 +311,33 @@ async function start(displayName: string) {
   renderer.canvas.addEventListener('contextmenu', (e: MouseEvent) => {
     e.preventDefault();
     if (!myPlayerId || chat.isFocused) return;
+    if (combatManager.inCombat) return;
 
+    const clickedEnemy = renderer.getEnemyAtScreen(e.clientX, e.clientY);
     const clickedItem = renderer.getItemAtScreen(e.clientX, e.clientY);
     const clickedPlayer = renderer.getPlayerAtScreen(e.clientX, e.clientY);
     const tile = renderer.screenToWorld(e.clientX, e.clientY);
 
-    if (clickedItem) {
+    if (clickedEnemy) {
+      // Right-clicked on an enemy
+      contextMenu.show(e.clientX, e.clientY, [
+        { label: `— ${clickedEnemy.name} —`, disabled: true, onSelect() {} },
+        { label: `Attack ${clickedEnemy.name}`, onSelect() { attackEnemy(clickedEnemy); } },
+        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
+      ]);
+    } else if (clickedItem) {
       // Right-clicked on a ground item
       contextMenu.show(e.clientX, e.clientY, [
         { label: `— ${clickedItem.itemType} —`, disabled: true, onSelect() {} },
         { label: `Take ${clickedItem.itemType}`, onSelect() { interactWithItem(clickedItem); } },
-        { label: 'Move Here', onSelect() { pendingPickup = null; moveToTile(tile); } },
+        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
       ]);
     } else if (clickedPlayer && !clickedPlayer.isLocal) {
       // Right-clicked on another player
       const name = playerStates.get(clickedPlayer.id)?.displayName ?? clickedPlayer.id;
       contextMenu.show(e.clientX, e.clientY, [
         { label: `— ${name} —`, disabled: true, onSelect() {} },
-        { label: 'Move Here', onSelect() { pendingPickup = null; moveToTile(tile); } },
+        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
         { label: 'Follow', disabled: true, onSelect() {} },
         { label: 'Trade', disabled: true, onSelect() {} },
         { label: 'Inspect', disabled: true, onSelect() {} },
@@ -260,7 +345,7 @@ async function start(displayName: string) {
     } else {
       // Right-clicked on empty ground
       contextMenu.show(e.clientX, e.clientY, [
-        { label: 'Move Here', onSelect() { pendingPickup = null; moveToTile(tile); } },
+        { label: 'Move Here', onSelect() { pendingPickup = null; pendingAttack = null; moveToTile(tile); } },
       ]);
     }
   });
@@ -275,23 +360,26 @@ async function start(displayName: string) {
 
     // ---- Local player: client-side prediction ----
     if (myPlayerId && localInitialized) {
-      // Walk along the path at MOVEMENT_SPEED tiles/sec
-      let remaining = MOVEMENT_SPEED * dt;
-      while (remaining > 0 && localPathIndex < localPath.length) {
-        const target = localPath[localPathIndex];
-        const dx = target.x - localPos.x;
-        const dy = target.y - localPos.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      // Don't move while in combat
+      if (!combatManager.inCombat) {
+        // Walk along the path at MOVEMENT_SPEED tiles/sec
+        let remaining = MOVEMENT_SPEED * dt;
+        while (remaining > 0 && localPathIndex < localPath.length) {
+          const target = localPath[localPathIndex];
+          const dx = target.x - localPos.x;
+          const dy = target.y - localPos.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist <= remaining) {
-          localPos.x = target.x;
-          localPos.y = target.y;
-          remaining -= dist;
-          localPathIndex++;
-        } else {
-          localPos.x += (dx / dist) * remaining;
-          localPos.y += (dy / dist) * remaining;
-          remaining = 0;
+          if (dist <= remaining) {
+            localPos.x = target.x;
+            localPos.y = target.y;
+            remaining -= dist;
+            localPathIndex++;
+          } else {
+            localPos.x += (dx / dist) * remaining;
+            localPos.y += (dy / dist) * remaining;
+            remaining = 0;
+          }
         }
       }
 
@@ -329,6 +417,16 @@ async function start(displayName: string) {
         if (px === pendingPickup.x && py === pendingPickup.y) {
           network.send({ type: 'PICKUP', itemId: pendingPickup.itemId });
           pendingPickup = null;
+        }
+      }
+
+      // Check pending attack — send ATTACK_ENEMY when we arrive on the enemy's tile
+      if (pendingAttack) {
+        const px = Math.round(localPos.x);
+        const py = Math.round(localPos.y);
+        if (px === pendingAttack.x && py === pendingAttack.y) {
+          network.send({ type: 'ATTACK_ENEMY', enemySpawnId: pendingAttack.enemyId });
+          pendingAttack = null;
         }
       }
 

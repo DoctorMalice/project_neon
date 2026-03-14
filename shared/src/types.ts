@@ -71,7 +71,9 @@ export interface ClientPickupMessage {
   itemId: string;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage;
+import type { ClientCombatMessage } from './combat-messages';
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage;
 
 // ---- Server → Client messages ----
 
@@ -145,6 +147,8 @@ export interface ServerInventoryMessage {
   items: InventoryItem[];
 }
 
+import type { ServerCombatMessage } from './combat-messages';
+
 export type ServerMessage =
   | ServerWorldStateMessage
   | ServerPlayerJoinMessage
@@ -156,4 +160,5 @@ export type ServerMessage =
   | ServerGroundItemsMessage
   | ServerItemPickedUpMessage
   | ServerItemSpawnMessage
-  | ServerInventoryMessage;
+  | ServerInventoryMessage
+  | ServerCombatMessage;

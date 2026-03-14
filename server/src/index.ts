@@ -10,6 +10,7 @@ import {
   MAX_DISPLAY_NAME_LENGTH,
   CHAT_HISTORY_SIZE,
   ITEM_RESPAWN_MS,
+  COMBAT_ENGAGE_RANGE,
   type TileType,
   type Position,
   type ClientMessage,
@@ -18,6 +19,8 @@ import {
   type GroundItem,
   type InventoryItem,
 } from 'shared';
+import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from './enemies';
+import * as combat from './combat';
 
 // ---- State ----
 
@@ -67,6 +70,59 @@ const inventories = new Map<string, InventoryItem[]>();
 for (const def of ITEM_SPAWN_DEFS) {
   const id = String(nextItemId++);
   groundItems.set(id, { id, ...def, active: true });
+}
+
+// ---- Enemies ----
+
+initEnemySpawns();
+
+// ---- Combat ----
+
+const playerCombats = new Map<string, string>(); // playerId → combatId
+
+function addToInventory(playerId: string, itemType: string, quantity: number): void {
+  const inv = inventories.get(playerId) ?? [];
+  const existing = inv.find((i) => i.itemType === itemType);
+  if (existing) {
+    existing.quantity += quantity;
+  } else {
+    inv.push({ itemType, quantity });
+  }
+  inventories.set(playerId, inv);
+  const player = players.get(playerId);
+  if (player) {
+    send(player.ws, { type: 'INVENTORY', items: inv });
+  }
+}
+
+function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>): void {
+  // Remove all players from combat tracking
+  for (const [playerId, cid] of playerCombats) {
+    if (cid === combatId) {
+      playerCombats.delete(playerId);
+    }
+  }
+  // Award loot to winners
+  for (const [playerId, reward] of winners) {
+    for (const item of reward.loot) {
+      addToInventory(playerId, item.itemType, item.quantity);
+    }
+  }
+}
+
+function onEnemyDied(spawn: { id: string; defId: string; active: boolean; x: number; y: number }): void {
+  broadcast({ type: 'ENEMY_DESPAWN', enemyId: spawn.id });
+
+  const def = ENEMY_DEFS[spawn.defId];
+  if (!def) return;
+
+  setTimeout(() => {
+    spawn.active = true;
+    broadcast({
+      type: 'ENEMY_SPAWN',
+      enemy: { id: spawn.id, defId: spawn.defId, name: def.name, x: spawn.x, y: spawn.y },
+    });
+  }, def.respawnMs);
 }
 
 // ---- WebSocket server ----
@@ -126,6 +182,12 @@ wss.on('connection', (ws) => {
         items: getActiveGroundItems(),
       });
 
+      // Send enemy spawns
+      send(ws, {
+        type: 'ENEMY_SPAWNS',
+        enemies: getActiveMapEnemies(),
+      });
+
       // Send initial empty inventory
       inventories.set(id, []);
       send(ws, { type: 'INVENTORY', items: [] });
@@ -148,6 +210,9 @@ wss.on('connection', (ws) => {
     if (!player) return; // not joined yet
 
     if (msg.type === 'MOVE_TO') {
+      // Block movement while in combat
+      if (playerCombats.has(player.id)) return;
+
       const targetX = Math.round(msg.x);
       const targetY = Math.round(msg.y);
       const target = { x: targetX, y: targetY };
@@ -226,10 +291,79 @@ wss.on('connection', (ws) => {
       }, ITEM_RESPAWN_MS);
       return;
     }
+
+    if (msg.type === 'ATTACK_ENEMY') {
+      if (playerCombats.has(player.id)) return;
+
+      const spawn = enemySpawns.get(msg.enemySpawnId);
+      if (!spawn || !spawn.active) return;
+
+      // Check range — generous to account for client prediction running ahead of server
+      const dx = player.position.x - spawn.x;
+      const dy = player.position.y - spawn.y;
+      if (dx * dx + dy * dy > COMBAT_ENGAGE_RANGE * COMBAT_ENGAGE_RANGE + 1) return;
+
+      // Check if enemy is already in combat (co-op join)
+      const existingCombatId = combat.getCombatForEnemy(msg.enemySpawnId);
+      if (existingCombatId) {
+        const joined = combat.joinCombat(
+          { id: player.id, displayName: player.displayName, ws: player.ws },
+          existingCombatId,
+        );
+        if (joined) {
+          playerCombats.set(player.id, existingCombatId);
+          // Stop movement
+          player.path = [];
+          player.pathIndex = 0;
+        }
+        return;
+      }
+
+      // Create new combat
+      const combatId = combat.createCombat(
+        { id: player.id, displayName: player.displayName, ws: player.ws },
+        msg.enemySpawnId,
+        onCombatEnd,
+        onEnemyDied,
+      );
+      if (combatId) {
+        playerCombats.set(player.id, combatId);
+        // Stop movement
+        player.path = [];
+        player.pathIndex = 0;
+      }
+      return;
+    }
+
+    if (msg.type === 'COMBAT_ACTION') {
+      if (!playerCombats.has(player.id)) return;
+      combat.submitAction(player.id, msg.combatId, msg.action);
+      return;
+    }
+
+    if (msg.type === 'JOIN_COMBAT') {
+      if (playerCombats.has(player.id)) return;
+      const joined = combat.joinCombat(
+        { id: player.id, displayName: player.displayName, ws: player.ws },
+        msg.combatId,
+      );
+      if (joined) {
+        playerCombats.set(player.id, msg.combatId);
+        player.path = [];
+        player.pathIndex = 0;
+      }
+      return;
+    }
   });
 
   ws.on('close', () => {
     if (player) {
+      // Handle combat disconnect
+      if (playerCombats.has(player.id)) {
+        combat.handleDisconnect(player.id);
+        playerCombats.delete(player.id);
+      }
+
       players.delete(player.id);
       inventories.delete(player.id);
       broadcast({ type: 'PLAYER_LEAVE', playerId: player.id });
@@ -244,6 +378,9 @@ function tick() {
   const tilesPerTick = MOVEMENT_SPEED / TICK_RATE;
 
   for (const player of players.values()) {
+    // Don't move players in combat
+    if (playerCombats.has(player.id)) continue;
+
     let remaining = tilesPerTick;
 
     while (remaining > 0 && player.pathIndex < player.path.length) {

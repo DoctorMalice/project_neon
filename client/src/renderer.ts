@@ -1,5 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js';
-import { TileType, TILE_SIZE, type Position, type GroundItem } from 'shared';
+import { TileType, TILE_SIZE, type Position, type GroundItem, type MapEnemy } from 'shared';
 
 // Tile colors
 const TILE_COLORS: Record<TileType, number> = {
@@ -13,6 +13,7 @@ const PLAYER_COLOR = 0x00ffcc;
 const LOCAL_PLAYER_COLOR = 0x00ffff;
 const PATH_PREVIEW_COLOR = 0xffffff;
 const GOLD_COLOR = 0xffd700;
+const ENEMY_COLOR = 0xff3333;
 
 // Zoom
 const MIN_ZOOM = 1.0; // current default = max zoom out
@@ -32,6 +33,7 @@ export class Renderer {
   private worldContainer: Container;
   private tileGraphics: Graphics;
   private itemGraphics: Graphics;
+  private enemyGraphics: Graphics;
   private playerGraphics: Graphics;
   private pathGraphics: Graphics;
 
@@ -39,6 +41,7 @@ export class Renderer {
   private camera: Position = { x: 0, y: 0 };
   private players: RenderPlayer[] = [];
   private groundItems: GroundItem[] = [];
+  private mapEnemies: MapEnemy[] = [];
   private pathPreview: Position[] = [];
   private zoom = MIN_ZOOM;
   private targetZoom = MIN_ZOOM;
@@ -54,6 +57,7 @@ export class Renderer {
     this.worldContainer = new Container();
     this.tileGraphics = new Graphics();
     this.itemGraphics = new Graphics();
+    this.enemyGraphics = new Graphics();
     this.playerGraphics = new Graphics();
     this.pathGraphics = new Graphics();
     this.labelsContainer = document.getElementById('labels-container')!;
@@ -70,6 +74,7 @@ export class Renderer {
 
     this.worldContainer.addChild(this.tileGraphics);
     this.worldContainer.addChild(this.itemGraphics);
+    this.worldContainer.addChild(this.enemyGraphics);
     this.worldContainer.addChild(this.pathGraphics);
     this.worldContainer.addChild(this.playerGraphics);
     this.app.stage.addChild(this.worldContainer);
@@ -121,6 +126,27 @@ export class Renderer {
       }
     }
     return null;
+  }
+
+  /** Returns the enemy at the given screen coordinates, or null */
+  getEnemyAtScreen(sx: number, sy: number): MapEnemy | null {
+    const ts = this.tileSize;
+    const size = ts * 0.35;
+    for (const enemy of this.mapEnemies) {
+      const { sx: ex, sy: ey } = this.worldToScreen(enemy.x, enemy.y);
+      const cx = ex + ts / 2;
+      const cy = ey + ts / 2;
+      const dx = sx - cx;
+      const dy = sy - cy;
+      if (Math.abs(dx) <= size && Math.abs(dy) <= size) {
+        return enemy;
+      }
+    }
+    return null;
+  }
+
+  setEnemies(enemies: MapEnemy[]) {
+    this.mapEnemies = enemies;
   }
 
   setGroundItems(items: GroundItem[]) {
@@ -250,6 +276,26 @@ export class Renderer {
       this.itemGraphics.lineTo(cx - size, cy);
       this.itemGraphics.closePath();
       this.itemGraphics.stroke({ width: 1, color: 0x000000, alpha: 0.4 });
+    }
+
+    // ---- Draw enemies ----
+    this.enemyGraphics.clear();
+    for (const enemy of this.mapEnemies) {
+      const { sx, sy } = this.worldToScreen(enemy.x, enemy.y);
+      const cx = sx + ts / 2;
+      const cy = sy + ts / 2;
+      const size = ts * 0.3;
+      // Red triangle pointing up
+      this.enemyGraphics.moveTo(cx, cy - size);
+      this.enemyGraphics.lineTo(cx + size, cy + size * 0.7);
+      this.enemyGraphics.lineTo(cx - size, cy + size * 0.7);
+      this.enemyGraphics.closePath();
+      this.enemyGraphics.fill(ENEMY_COLOR);
+      this.enemyGraphics.moveTo(cx, cy - size);
+      this.enemyGraphics.lineTo(cx + size, cy + size * 0.7);
+      this.enemyGraphics.lineTo(cx - size, cy + size * 0.7);
+      this.enemyGraphics.closePath();
+      this.enemyGraphics.stroke({ width: 1.5, color: 0x000000, alpha: 0.5 });
     }
 
     // ---- Draw path preview ----
