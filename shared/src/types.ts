@@ -87,7 +87,12 @@ export interface ClientAllocateAttributesMessage {
   changes: Partial<Attributes>;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage;
+export interface ClientReconnectMessage {
+  type: 'RECONNECT';
+  token: string;
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage;
 
 // ---- Server → Client messages ----
 
@@ -134,6 +139,11 @@ export interface ServerMapMessage {
 export interface ServerJoinedMessage {
   type: 'JOINED';
   playerId: string;
+  token: string;
+}
+
+export interface ServerReconnectFailedMessage {
+  type: 'RECONNECT_FAILED';
 }
 
 export interface ServerPongMessage {
@@ -193,4 +203,5 @@ export type ServerMessage =
   | ServerInventoryMessage
   | ServerCombatMessage
   | ServerCharacterStateMessage
-  | ServerLevelUpMessage;
+  | ServerLevelUpMessage
+  | ServerReconnectFailedMessage;

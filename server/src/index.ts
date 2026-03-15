@@ -23,6 +23,7 @@ import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from '.
 import * as combat from './combat';
 import { createCharacter, addXP, allocateAttributes, type ServerCharacter } from './player-state';
 import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, deriveCombatStats } from 'shared';
+import * as persistence from './persistence';
 
 // ---- State ----
 
@@ -39,8 +40,12 @@ const PORT = Number(process.env.PORT) || 3001;
 const map: TileType[][] = generateMap();
 const players = new Map<string, ServerPlayer>();
 const characters = new Map<string, ServerCharacter>();
+const playerTokens = new Map<string, string>(); // playerId → token
 const chatHistory: ServerMessage[] = [];
 let nextPlayerId = 1;
+
+// Load saved player data
+persistence.loadAll();
 let nextItemId = 1;
 
 // ---- Ground items ----
@@ -105,6 +110,15 @@ function addToInventory(playerId: string, itemType: string, quantity: number): v
   }
 }
 
+function savePlayerState(playerId: string): void {
+  const token = playerTokens.get(playerId);
+  const character = characters.get(playerId);
+  const player = players.get(playerId);
+  if (!token || !character || !player) return;
+  const inv = inventories.get(playerId) ?? [];
+  persistence.savePlayer(token, player.displayName, character.sheet, inv);
+}
+
 function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>): void {
   // Remove all players from combat tracking
   for (const [playerId, cid] of playerCombats) {
@@ -144,6 +158,7 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
         sheet: character.sheet,
         combatStats: character.combatStats,
       });
+      savePlayerState(playerId);
     }
   }
   // If enemy survived (fled/defeat), broadcast that it's no longer in combat
@@ -198,6 +213,56 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === 'RECONNECT') {
+      if (player) return;
+
+      const saved = persistence.getPlayer(msg.token);
+      if (!saved) {
+        send(ws, { type: 'RECONNECT_FAILED' });
+        return;
+      }
+
+      const id = String(nextPlayerId++);
+      const token = msg.token;
+
+      player = {
+        id,
+        displayName: saved.displayName,
+        position: findSpawnPoint(),
+        path: [],
+        pathIndex: 0,
+        ws,
+      };
+      players.set(id, player);
+
+      // Restore character from saved data
+      const character: ServerCharacter = {
+        sheet: saved.sheet,
+        combatStats: deriveCombatStats(saved.sheet),
+      };
+      characters.set(id, character);
+      playerTokens.set(id, token);
+
+      // Restore inventory
+      inventories.set(id, saved.inventory ?? []);
+
+      // Send join info
+      send(ws, { type: 'JOINED', playerId: id, token });
+      send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats });
+      send(ws, { type: 'MAP', width: map[0].length, height: map.length, tiles: map.map((row) => row.map((t) => t as number)) });
+      send(ws, { type: 'WORLD_STATE', players: getPlayerStates() });
+      send(ws, { type: 'GROUND_ITEMS', items: getActiveGroundItems() });
+      send(ws, { type: 'ENEMY_SPAWNS', enemies: getActiveMapEnemies(combat.getCombatForEnemy) });
+      send(ws, { type: 'INVENTORY', items: inventories.get(id)! });
+      for (const chatMsg of chatHistory) {
+        send(ws, chatMsg);
+      }
+      broadcast({ type: 'PLAYER_JOIN', player: playerToState(player) }, id);
+
+      console.log(`${saved.displayName} (${id}) reconnected as ${character.sheet.race} ${character.sheet.class} (level ${character.sheet.level})`);
+      return;
+    }
+
     if (msg.type === 'JOIN' || msg.type === 'CHARACTER_CREATE') {
       if (player) return; // already joined
 
@@ -206,6 +271,8 @@ wss.on('connection', (ws) => {
         .slice(0, MAX_DISPLAY_NAME_LENGTH) || 'Anon';
 
       const id = String(nextPlayerId++);
+      const token = persistence.generateToken();
+
       player = {
         id,
         displayName,
@@ -227,8 +294,10 @@ wss.on('connection', (ws) => {
         characters.set(id, character);
       }
 
-      // Tell this player their ID
-      send(ws, { type: 'JOINED', playerId: id });
+      playerTokens.set(id, token);
+
+      // Tell this player their ID + token
+      send(ws, { type: 'JOINED', playerId: id, token });
 
       // Send character state
       const character = characters.get(id)!;
@@ -278,6 +347,9 @@ wss.on('connection', (ws) => {
         type: 'PLAYER_JOIN',
         player: playerToState(player),
       }, id);
+
+      // Persist the new character
+      savePlayerState(id);
 
       console.log(`${displayName} (${id}) joined as ${character.sheet.race} ${character.sheet.class}`);
       return;
@@ -378,6 +450,7 @@ wss.on('connection', (ws) => {
           sheet: character.sheet,
           combatStats: character.combatStats,
         });
+        savePlayerState(player.id);
       }
       return;
     }
@@ -475,9 +548,12 @@ wss.on('connection', (ws) => {
         playerCombats.delete(player.id);
       }
 
+      // Save before cleanup so latest state is persisted
+      savePlayerState(player.id);
       players.delete(player.id);
       inventories.delete(player.id);
       characters.delete(player.id);
+      playerTokens.delete(player.id);
       broadcast({ type: 'PLAYER_LEAVE', playerId: player.id });
       console.log(`${player.displayName} (${player.id}) left`);
     }

@@ -79,22 +79,58 @@ const combatManager = new Combat(network);
 const characterPanel = new CharacterPanel(network);
 let characterState: CharacterSheet | null = null;
 
-async function start(createResult: { displayName: string; race: string; class: string; initialAttributes: Record<string, number> }) {
+const STORAGE_KEY = 'project_neon_session';
+
+interface SavedSession {
+  token: string;
+  displayName: string;
+}
+
+function getSavedSession(): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.token === 'string') return parsed;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function saveSession(token: string, displayName: string): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, displayName }));
+}
+
+function clearSession(): void {
+  localStorage.removeItem(STORAGE_KEY);
+}
+
+async function start(mode: { type: 'create'; displayName: string; race: string; class: string; initialAttributes: Record<string, number> } | { type: 'reconnect'; token: string }) {
   await renderer.init();
 
   const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const wsHost = window.location.hostname || 'localhost';
   await network.connect(`${wsProtocol}://${wsHost}:3001`);
 
-  network.send({
-    type: 'CHARACTER_CREATE',
-    displayName: createResult.displayName,
-    race: createResult.race,
-    class: createResult.class,
-    initialAttributes: createResult.initialAttributes,
-  } as any);
+  if (mode.type === 'reconnect') {
+    network.send({ type: 'RECONNECT', token: mode.token } as any);
+  } else {
+    network.send({
+      type: 'CHARACTER_CREATE',
+      displayName: mode.displayName,
+      race: mode.race,
+      class: mode.class,
+      initialAttributes: mode.initialAttributes,
+    } as any);
+  }
 
   network.onMessage((msg) => {
+    // Handle reconnect failure — show character creation
+    if (msg.type === 'RECONNECT_FAILED') {
+      clearSession();
+      showCharacterCreate();
+      return;
+    }
+
     // Handle character messages
     if (msg.type === 'CHARACTER_STATE') {
       characterState = msg.sheet;
@@ -125,6 +161,9 @@ async function start(createResult: { displayName: string; race: string; class: s
       case 'JOINED':
         myPlayerId = msg.playerId;
         combatManager.setPlayerId(msg.playerId);
+        if (msg.token) {
+          saveSession(msg.token, '');
+        }
         break;
 
       case 'MAP':
@@ -616,9 +655,24 @@ async function start(createResult: { displayName: string; race: string; class: s
 
 // ---- Join screen with character creation ----
 const joinScreen = document.getElementById('join-screen')!;
-const charCreate = new CharacterCreate(joinScreen);
-charCreate.setOnComplete((result) => {
+
+function showCharacterCreate(): void {
+  joinScreen.style.display = '';
+  document.getElementById('game-container')!.classList.add('setup-active');
+  const charCreate = new CharacterCreate(joinScreen);
+  charCreate.setOnComplete((result) => {
+    joinScreen.style.display = 'none';
+    document.getElementById('game-container')!.classList.remove('setup-active');
+    start({ type: 'create', ...result });
+  });
+}
+
+// Check for saved session — auto-reconnect if token exists
+const savedSession = getSavedSession();
+if (savedSession) {
   joinScreen.style.display = 'none';
   document.getElementById('game-container')!.classList.remove('setup-active');
-  start(result);
-});
+  start({ type: 'reconnect', token: savedSession.token });
+} else {
+  showCharacterCreate();
+}
