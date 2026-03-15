@@ -619,5 +619,6 @@ const joinScreen = document.getElementById('join-screen')!;
 const charCreate = new CharacterCreate(joinScreen);
 charCreate.setOnComplete((result) => {
   joinScreen.style.display = 'none';
+  document.getElementById('game-container')!.classList.remove('setup-active');
   start(result);
 });

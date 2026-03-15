@@ -15,7 +15,7 @@
     #join-screen {
       position: absolute; inset: 0;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      background: rgba(0, 0, 0, 0.85);
+      background: #111;
       z-index: 100;
       gap: 12px;
     }
@@ -28,20 +28,20 @@
       outline: none; text-align: center;
     }
     #join-screen input::placeholder { color: rgba(255,255,255,0.4); }
-    #join-screen input:focus { border-color: #e8d8a8; box-shadow: 0 0 12px rgba(200, 184, 138, 0.2); }
+    #join-screen input:focus { border-color: #e8d8a8; }
 
     .cc-btn {
       padding: 10px 32px; font-size: 0.95rem;
       border: 1px solid rgba(200, 184, 138, 0.3); border-radius: 8px; cursor: pointer;
       background: rgba(200, 184, 138, 0.08); color: #c8b88a; font-weight: 600;
-      transition: transform 0.1s, box-shadow 0.1s;
+      transition: background 0.15s, border-color 0.15s;
     }
     .cc-btn:hover { background: rgba(200, 184, 138, 0.15); }
     .cc-btn.primary {
       background: #c8b88a; color: #1a1a1a; font-weight: 700;
       border: none;
     }
-    .cc-btn.primary:hover { transform: scale(1.05); box-shadow: 0 0 16px rgba(200, 184, 138, 0.35); }
+    .cc-btn.primary:hover { background: #d8c89a; }
 
     .cc-heading { color: #e8d8a8; font-size: 1.4rem; margin-bottom: 4px; }
     .cc-grid {
@@ -53,7 +53,7 @@
       padding: 12px 8px; gap: 4px;
       background: rgba(200, 184, 138, 0.06);
       border: 1px solid rgba(200, 184, 138, 0.2); border-radius: 8px;
-      cursor: pointer; color: #ddd; transition: all 0.15s;
+      cursor: pointer; color: #ddd; transition: background 0.15s, border-color 0.15s;
     }
     .cc-option-btn:hover {
       background: rgba(200, 184, 138, 0.15);
@@ -83,6 +83,17 @@
     }
     .cc-attr-btn:hover { background: rgba(200, 184, 138, 0.2); color: #fff; }
     .cc-btn-row { display: flex; gap: 12px; }
+
+    /* Hide game UI while in setup */
+    #game-container.setup-active #chat-container,
+    #game-container.setup-active #inventory-btn,
+    #game-container.setup-active #inventory-panel,
+    #game-container.setup-active #character-btn,
+    #game-container.setup-active #character-panel,
+    #game-container.setup-active #debug-overlay,
+    #game-container.setup-active #labels-container {
+      display: none !important;
+    }
 
     /* ---- Chat ---- */
     #chat-container {
@@ -447,7 +458,7 @@
   </style>
 </head>
 <body>
-  <div id="game-container">
+  <div id="game-container" class="setup-active">
     <!-- PixiJS canvas is appended here -->
     <div id="labels-container"></div>
 
