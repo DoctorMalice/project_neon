@@ -189,50 +189,62 @@ function resolveRound(combat: CombatInstance): void {
 
   const enemyDef = ENEMY_DEFS[combat.enemySpawn.defId];
 
-  // Resolve ally actions
+  // Resolve flee attempts first (separate pass to avoid mutating allies during iteration)
+  const fleeingIds: string[] = [];
   for (const ally of combat.state.allies) {
     if (!ally.alive) continue;
     const action = combat.playerActions.get(ally.id);
-    if (!action) continue;
+    if (action?.type !== 'run') continue;
 
-    if (action.type === 'run') {
-      if (Math.random() < COMBAT_RUN_CHANCE) {
-        combat.state.log.push({
-          actor: ally.name, target: '', damage: 0,
-          crit: false, dodged: false, defended: false, immune: false,
-          message: `${ally.name} fled from combat!`,
-        });
-        // Remove only this player from combat
-        ally.alive = false;
-        const player = combat.players.get(ally.id);
-        if (player) {
-          sendToPlayer(player, {
-            type: 'COMBAT_END',
-            state: combat.state,
-            result: 'fled',
-            xpGained: 0,
-            loot: [],
-          });
-        }
-        combat.players.delete(ally.id);
-        combat.playerActions.delete(ally.id);
-        combat.onPlayerFled(ally.id);
+    if (Math.random() < COMBAT_RUN_CHANCE) {
+      combat.state.log.push({
+        actor: ally.name, target: '', damage: 0,
+        crit: false, dodged: false, defended: false, immune: false,
+        message: `${ally.name} fled from combat!`,
+      });
+      fleeingIds.push(ally.id);
+    } else {
+      combat.state.log.push({
+        actor: ally.name, target: '', damage: 0,
+        crit: false, dodged: false, defended: false, immune: false,
+        message: `${ally.name} failed to run away!`,
+      });
+    }
+  }
 
-        // If no allies left, end combat entirely
-        if (combat.players.size === 0 || combat.state.allies.every(a => !a.alive)) {
-          combat.state.phase = 'defeat';
-          endCombat(combat, 'defeat');
-          return;
-        }
-      } else {
-        combat.state.log.push({
-          actor: ally.name, target: '', damage: 0,
-          crit: false, dodged: false, defended: false, immune: false,
-          message: `${ally.name} failed to run away!`,
-        });
-      }
-    } else if (action.type === 'attack') {
-      // Attack first alive enemy
+  // Remove fled players
+  for (const fledId of fleeingIds) {
+    const player = combat.players.get(fledId);
+    if (player) {
+      sendToPlayer(player, {
+        type: 'COMBAT_END',
+        state: combat.state,
+        result: 'fled',
+        xpGained: 0,
+        loot: [],
+      });
+    }
+    combat.state.allies = combat.state.allies.filter(a => a.id !== fledId);
+    combat.state.awaitingActionFrom = combat.state.awaitingActionFrom.filter(id => id !== fledId);
+    combat.players.delete(fledId);
+    combat.playerActions.delete(fledId);
+    combat.onPlayerFled(fledId);
+  }
+
+  // If no allies left after fleeing, end combat
+  if (combat.players.size === 0 || combat.state.allies.length === 0) {
+    combat.state.phase = 'defeat';
+    endCombat(combat, 'defeat');
+    return;
+  }
+
+  // Resolve attack/defend actions
+  for (const ally of combat.state.allies) {
+    if (!ally.alive) continue;
+    const action = combat.playerActions.get(ally.id);
+    if (!action || action.type === 'run') continue; // run already handled
+
+    if (action.type === 'attack') {
       const target = combat.state.enemies.find(e => e.alive);
       if (target) {
         const entry = resolveDamage(ally, target, action.strategy, action.damageType ?? 'bludgeoning', false);

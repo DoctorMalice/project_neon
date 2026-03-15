@@ -505,8 +505,8 @@ async function start(displayName: string) {
         }
       }
 
-      // Check pending attack — send ATTACK_ENEMY when we arrive at the adjacent tile
-      if (pendingAttack) {
+      // Check pending attack — send ATTACK_ENEMY only after path is fully walked
+      if (pendingAttack && localPath.length === 0) {
         const px = Math.round(localPos.x);
         const py = Math.round(localPos.y);
         if (px === pendingAttack.x && py === pendingAttack.y) {
@@ -515,8 +515,8 @@ async function start(displayName: string) {
         }
       }
 
-      // Check pending join combat — send JOIN_COMBAT when we arrive at the adjacent tile
-      if (pendingJoinCombat) {
+      // Check pending join combat — send JOIN_COMBAT only after path is fully walked
+      if (pendingJoinCombat && localPath.length === 0) {
         const px = Math.round(localPos.x);
         const py = Math.round(localPos.y);
         if (px === pendingJoinCombat.x && py === pendingJoinCombat.y) {

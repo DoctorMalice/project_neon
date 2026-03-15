@@ -9,8 +9,8 @@ const TILE_COLORS: Record<TileType, number> = {
   [TileType.Wall]: 0x555555,
 };
 
-const PLAYER_COLOR = 0x00ffcc;
-const LOCAL_PLAYER_COLOR = 0x00ffff;
+const PLAYER_COLOR = 0xc8b88a;
+const LOCAL_PLAYER_COLOR = 0xe8d8a8;
 const PATH_PREVIEW_COLOR = 0xffffff;
 const GOLD_COLOR = 0xffd700;
 const ENEMY_COLOR = 0xff3333;
