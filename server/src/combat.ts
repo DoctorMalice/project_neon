@@ -370,31 +370,13 @@ function startActionTimeout(combat: CombatInstance): void {
 
 // ---- Public API ----
 
-function getDefaultPlayerStats(): CombatStats {
-  return {
-    level: 1,
-    hp: 50, maxHp: 50,
-    mp: 20, maxMp: 20,
-    ep: 20, maxEp: 20,
-    kp: 0, maxKp: 0,
-    accuracy: 10,
-    power: 8,
-    speed: 8,
-    defense: 5,
-    dodge: 5,
-    critBonus: 3,
-    damageTypeBonuses: {},
-    resistances: {},
-    immunities: [],
-  };
-}
-
 export function createCombat(
   player: PlayerHandle,
   enemySpawnId: string,
   onEnd: CombatInstance['onEnd'],
   onEnemyDied: CombatInstance['onEnemyDied'],
   onPlayerFled: CombatInstance['onPlayerFled'],
+  playerStats?: CombatStats,
 ): string | null {
   const spawn = enemySpawns.get(enemySpawnId);
   if (!spawn || !spawn.active) return null;
@@ -404,7 +386,8 @@ export function createCombat(
 
   const combatId = `combat_${nextCombatId++}`;
 
-  const allyParticipant = makeParticipant(player.id, player.displayName, false, getDefaultPlayerStats());
+  const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
+  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats);
   const enemyParticipant = makeParticipant(
     `enemy_${combatId}`,
     enemyDef.name,
@@ -442,14 +425,15 @@ export function createCombat(
   return combatId;
 }
 
-export function joinCombat(player: PlayerHandle, combatId: string): boolean {
+export function joinCombat(player: PlayerHandle, combatId: string, playerStats?: CombatStats): boolean {
   const combat = combats.get(combatId);
   if (!combat) return false;
   if (combat.state.phase !== 'awaiting_action') return false;
   if (combat.state.allies.length >= 3) return false;
   if (combat.players.has(player.id)) return false;
 
-  const allyParticipant = makeParticipant(player.id, player.displayName, false, getDefaultPlayerStats());
+  const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
+  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats);
   combat.state.allies.push(allyParticipant);
   combat.state.awaitingActionFrom.push(player.id);
   combat.players.set(player.id, player);

@@ -21,6 +21,8 @@ import {
 } from 'shared';
 import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from './enemies';
 import * as combat from './combat';
+import { createCharacter, addXP, allocateAttributes, type ServerCharacter } from './player-state';
+import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, deriveCombatStats } from 'shared';
 
 // ---- State ----
 
@@ -36,6 +38,7 @@ interface ServerPlayer {
 const PORT = Number(process.env.PORT) || 3001;
 const map: TileType[][] = generateMap();
 const players = new Map<string, ServerPlayer>();
+const characters = new Map<string, ServerCharacter>();
 const chatHistory: ServerMessage[] = [];
 let nextPlayerId = 1;
 let nextItemId = 1;
@@ -109,10 +112,38 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
       playerCombats.delete(playerId);
     }
   }
-  // Award loot to winners
+  // Award loot and XP to winners
   for (const [playerId, reward] of winners) {
     for (const item of reward.loot) {
       addToInventory(playerId, item.itemType, item.quantity);
+    }
+    // Award XP
+    const character = characters.get(playerId);
+    const player = players.get(playerId);
+    if (character && player && reward.xp > 0) {
+      const result = addXP(character, reward.xp);
+      if (result.leveled) {
+        send(player.ws, {
+          type: 'LEVEL_UP',
+          newLevel: result.newLevel,
+          attributePointsGained: (result.newLevel - result.oldLevel) * 3,
+          growthIncreases: result.growthIncreases,
+        });
+        // System chat message
+        const chatMsg: ServerMessage = {
+          type: 'CHAT',
+          playerId: 'system',
+          displayName: 'System',
+          message: `${player.displayName} has reached level ${result.newLevel}!`,
+          timestamp: Date.now(),
+        };
+        broadcast(chatMsg);
+      }
+      send(player.ws, {
+        type: 'CHARACTER_STATE',
+        sheet: character.sheet,
+        combatStats: character.combatStats,
+      });
     }
   }
   // If enemy survived (fled/defeat), broadcast that it's no longer in combat
@@ -167,7 +198,7 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    if (msg.type === 'JOIN') {
+    if (msg.type === 'JOIN' || msg.type === 'CHARACTER_CREATE') {
       if (player) return; // already joined
 
       const displayName = msg.displayName
@@ -185,8 +216,27 @@ wss.on('connection', (ws) => {
       };
       players.set(id, player);
 
+      // Create character if CHARACTER_CREATE, otherwise default Human Traveler
+      if (msg.type === 'CHARACTER_CREATE') {
+        const race = RACE_IDS.includes(msg.race as RaceId) ? msg.race as RaceId : 'Human';
+        const cls = CLASS_IDS.includes(msg.class as ClassId) ? msg.class as ClassId : 'Traveler';
+        const character = createCharacter(race, cls, msg.initialAttributes ?? {});
+        characters.set(id, character);
+      } else {
+        const character = createCharacter('Human', 'Traveler', {});
+        characters.set(id, character);
+      }
+
       // Tell this player their ID
       send(ws, { type: 'JOINED', playerId: id });
+
+      // Send character state
+      const character = characters.get(id)!;
+      send(ws, {
+        type: 'CHARACTER_STATE',
+        sheet: character.sheet,
+        combatStats: character.combatStats,
+      });
 
       // Send the map
       send(ws, {
@@ -229,7 +279,7 @@ wss.on('connection', (ws) => {
         player: playerToState(player),
       }, id);
 
-      console.log(`${displayName} (${id}) joined`);
+      console.log(`${displayName} (${id}) joined as ${character.sheet.race} ${character.sheet.class}`);
       return;
     }
 
@@ -318,6 +368,20 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === 'ALLOCATE_ATTRIBUTES') {
+      const character = characters.get(player.id);
+      if (!character) return;
+      const success = allocateAttributes(character, msg.changes);
+      if (success) {
+        send(ws, {
+          type: 'CHARACTER_STATE',
+          sheet: character.sheet,
+          combatStats: character.combatStats,
+        });
+      }
+      return;
+    }
+
     if (msg.type === 'ATTACK_ENEMY') {
       if (playerCombats.has(player.id)) return;
 
@@ -330,12 +394,17 @@ wss.on('connection', (ws) => {
       const dy = Math.abs(player.position.y - spawn.y);
       if (dx > COMBAT_ENGAGE_RANGE || dy > COMBAT_ENGAGE_RANGE) return;
 
+      // Get player's combat stats
+      const charForAttack = characters.get(player.id);
+      const attackStats = charForAttack ? deriveCombatStats(charForAttack.sheet) : undefined;
+
       // Check if enemy is already in combat (co-op join)
       const existingCombatId = combat.getCombatForEnemy(msg.enemySpawnId);
       if (existingCombatId) {
         const joined = combat.joinCombat(
           { id: player.id, displayName: player.displayName, ws: player.ws },
           existingCombatId,
+          attackStats,
         );
         if (joined) {
           playerCombats.set(player.id, existingCombatId);
@@ -351,6 +420,7 @@ wss.on('connection', (ws) => {
         onCombatEnd,
         onEnemyDied,
         onPlayerFled,
+        attackStats,
       );
       if (combatId) {
         playerCombats.set(player.id, combatId);
@@ -382,9 +452,12 @@ wss.on('connection', (ws) => {
         const dy = Math.abs(player.position.y - enemySpawn.y);
         if (dx > COMBAT_ENGAGE_RANGE || dy > COMBAT_ENGAGE_RANGE) return;
       }
+      const charForJoin = characters.get(player.id);
+      const joinStats = charForJoin ? deriveCombatStats(charForJoin.sheet) : undefined;
       const joined = combat.joinCombat(
         { id: player.id, displayName: player.displayName, ws: player.ws },
         msg.combatId,
+        joinStats,
       );
       if (joined) {
         playerCombats.set(player.id, msg.combatId);
@@ -404,6 +477,7 @@ wss.on('connection', (ws) => {
 
       players.delete(player.id);
       inventories.delete(player.id);
+      characters.delete(player.id);
       broadcast({ type: 'PLAYER_LEAVE', playerId: player.id });
       console.log(`${player.displayName} (${player.id}) left`);
     }

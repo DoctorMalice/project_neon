@@ -43,6 +43,8 @@ export interface CombatStats {
   maxHp: number;
   mp: number;
   maxMp: number;
+  sp: number;
+  maxSp: number;
   ep: number;
   maxEp: number;
   kp: number;

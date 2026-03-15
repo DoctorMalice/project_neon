@@ -11,6 +11,7 @@ export const ENEMY_DEFS: Record<string, EnemyDef> = {
       level: 1,
       hp: 15, maxHp: 15,
       mp: 0, maxMp: 0,
+      sp: 10, maxSp: 10,
       ep: 10, maxEp: 10,
       kp: 0, maxKp: 0,
       accuracy: 8,

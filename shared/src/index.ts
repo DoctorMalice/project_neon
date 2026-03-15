@@ -4,3 +4,4 @@ export * from './map';
 export * from './pathfinding';
 export * from './combat-types';
 export * from './combat-messages';
+export * from './character';

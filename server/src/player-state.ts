@@ -1,0 +1,128 @@
+import {
+  type RaceId,
+  type ClassId,
+  type Attributes,
+  type AttributeKey,
+  type CharacterSheet,
+  type CombatStats,
+  ATTRIBUTE_KEYS,
+  STARTING_ATTRIBUTE_POINTS,
+  ATTRIBUTE_POINTS_PER_LEVEL,
+  computeBaseAttributes,
+  computeGrowths,
+  deriveCombatStats,
+  getLevelFromXP,
+} from 'shared';
+
+export interface ServerCharacter {
+  sheet: CharacterSheet;
+  combatStats: CombatStats;
+}
+
+export function createCharacter(
+  race: RaceId,
+  cls: ClassId,
+  initialAttributes: Partial<Attributes>,
+): ServerCharacter {
+  const baseAttrs = computeBaseAttributes(race, cls);
+  const growths = computeGrowths(race, cls);
+
+  // Validate and apply initial attribute allocation
+  let cost = 0;
+  for (const key of Object.keys(initialAttributes) as AttributeKey[]) {
+    const val = initialAttributes[key];
+    if (val && val > 0) {
+      cost += val;
+      baseAttrs[key] += val;
+    }
+  }
+
+  const pointsSpent = Math.min(cost, STARTING_ATTRIBUTE_POINTS);
+  // If they tried to spend more than allowed, clamp (server-side validation)
+  if (cost > STARTING_ATTRIBUTE_POINTS) {
+    // Reset — don't apply any
+    const clean = computeBaseAttributes(race, cls);
+    for (const key of ATTRIBUTE_KEYS) {
+      baseAttrs[key] = clean[key];
+    }
+  }
+
+  const sheet: CharacterSheet = {
+    race,
+    class: cls,
+    level: 0,
+    xp: 0,
+    attributePoints: cost > STARTING_ATTRIBUTE_POINTS ? STARTING_ATTRIBUTE_POINTS : STARTING_ATTRIBUTE_POINTS - pointsSpent,
+    attributes: baseAttrs,
+    attributeGrowths: growths,
+  };
+
+  return {
+    sheet,
+    combatStats: deriveCombatStats(sheet),
+  };
+}
+
+export interface LevelUpResult {
+  leveled: boolean;
+  oldLevel: number;
+  newLevel: number;
+  growthIncreases: Partial<Attributes>;
+}
+
+export function addXP(character: ServerCharacter, amount: number): LevelUpResult {
+  const oldLevel = character.sheet.level;
+  character.sheet.xp += amount;
+  const newLevel = getLevelFromXP(character.sheet.xp);
+
+  if (newLevel <= oldLevel) {
+    return { leveled: false, oldLevel, newLevel: oldLevel, growthIncreases: {} };
+  }
+
+  const levelsGained = newLevel - oldLevel;
+  character.sheet.attributePoints += ATTRIBUTE_POINTS_PER_LEVEL * levelsGained;
+
+  const growthIncreases: Partial<Attributes> = {};
+
+  for (let i = 0; i < levelsGained; i++) {
+    for (const key of ATTRIBUTE_KEYS) {
+      const growthRate = character.sheet.attributeGrowths[key];
+      const guaranteed = Math.floor(growthRate / 100);
+      const remainder = growthRate % 100;
+      const randomGrowth = Math.random() * 100 < remainder ? 1 : 0;
+      const total = guaranteed + randomGrowth;
+      if (total > 0) {
+        character.sheet.attributes[key] += total;
+        growthIncreases[key] = (growthIncreases[key] ?? 0) + total;
+      }
+    }
+  }
+
+  character.sheet.level = newLevel;
+  character.combatStats = deriveCombatStats(character.sheet);
+
+  return { leveled: true, oldLevel, newLevel, growthIncreases };
+}
+
+export function allocateAttributes(character: ServerCharacter, changes: Partial<Attributes>): boolean {
+  let cost = 0;
+  for (const key of Object.keys(changes) as AttributeKey[]) {
+    const val = changes[key];
+    if (val === undefined || val <= 0) continue;
+    if (!ATTRIBUTE_KEYS.includes(key)) return false;
+    cost += val;
+  }
+
+  if (cost <= 0 || cost > character.sheet.attributePoints) return false;
+
+  character.sheet.attributePoints -= cost;
+  for (const key of Object.keys(changes) as AttributeKey[]) {
+    const val = changes[key];
+    if (val && val > 0) {
+      character.sheet.attributes[key] += val;
+    }
+  }
+
+  character.combatStats = deriveCombatStats(character.sheet);
+  return true;
+}

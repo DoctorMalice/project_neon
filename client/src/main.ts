@@ -8,6 +8,7 @@ import {
   type GroundItem,
   type MapEnemy,
 } from 'shared';
+import type { CharacterSheet, CombatStats } from 'shared';
 import { Network } from './network';
 import { Renderer } from './renderer';
 import { Chat } from './chat';
@@ -15,6 +16,8 @@ import { DebugOverlay } from './debug';
 import { ContextMenu } from './context-menu';
 import { Inventory } from './inventory';
 import { Combat } from './combat';
+import { CharacterCreate } from './character-create';
+import { CharacterPanel } from './character-panel';
 
 // ---- State ----
 let myPlayerId: string | null = null;
@@ -73,17 +76,36 @@ const debug = new DebugOverlay(network);
 const contextMenu = new ContextMenu();
 const inventory = new Inventory();
 const combatManager = new Combat(network);
+const characterPanel = new CharacterPanel(network);
+let characterState: CharacterSheet | null = null;
 
-async function start(displayName: string) {
+async function start(createResult: { displayName: string; race: string; class: string; initialAttributes: Record<string, number> }) {
   await renderer.init();
 
   const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const wsHost = window.location.hostname || 'localhost';
   await network.connect(`${wsProtocol}://${wsHost}:3001`);
 
-  network.send({ type: 'JOIN', displayName });
+  network.send({
+    type: 'CHARACTER_CREATE',
+    displayName: createResult.displayName,
+    race: createResult.race,
+    class: createResult.class,
+    initialAttributes: createResult.initialAttributes,
+  } as any);
 
   network.onMessage((msg) => {
+    // Handle character messages
+    if (msg.type === 'CHARACTER_STATE') {
+      characterState = msg.sheet;
+      characterPanel.update(msg.sheet, msg.combatStats);
+      return;
+    }
+    if (msg.type === 'LEVEL_UP') {
+      chat.addSystemMessage(`Level up! You are now level ${msg.newLevel}!`);
+      return;
+    }
+
     // Let combat manager handle combat messages first
     if (msg.type === 'COMBAT_START' || msg.type === 'COMBAT_UPDATE' || msg.type === 'COMBAT_END') {
       combatManager.handleMessage(msg);
@@ -592,22 +614,10 @@ async function start(displayName: string) {
   requestAnimationFrame(gameLoop);
 }
 
-// ---- Join screen ----
+// ---- Join screen with character creation ----
 const joinScreen = document.getElementById('join-screen')!;
-const nameInput = document.getElementById('name-input') as HTMLInputElement;
-const joinBtn = document.getElementById('join-btn')!;
-
-function handleJoin() {
-  const name = nameInput.value.trim();
-  if (!name) {
-    nameInput.focus();
-    return;
-  }
+const charCreate = new CharacterCreate(joinScreen);
+charCreate.setOnComplete((result) => {
   joinScreen.style.display = 'none';
-  start(name);
-}
-
-joinBtn.addEventListener('click', handleJoin);
-nameInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') handleJoin();
+  start(result);
 });

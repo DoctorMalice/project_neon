@@ -71,9 +71,23 @@ export interface ClientPickupMessage {
   itemId: string;
 }
 
+import type { RaceId, ClassId, Attributes } from './character';
 import type { ClientCombatMessage } from './combat-messages';
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage;
+export interface ClientCharacterCreateMessage {
+  type: 'CHARACTER_CREATE';
+  displayName: string;
+  race: RaceId;
+  class: ClassId;
+  initialAttributes: Partial<Attributes>;
+}
+
+export interface ClientAllocateAttributesMessage {
+  type: 'ALLOCATE_ATTRIBUTES';
+  changes: Partial<Attributes>;
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage;
 
 // ---- Server → Client messages ----
 
@@ -148,7 +162,22 @@ export interface ServerInventoryMessage {
   items: InventoryItem[];
 }
 
+import type { CharacterSheet } from './character';
+import type { CombatStats } from './combat-types';
 import type { ServerCombatMessage } from './combat-messages';
+
+export interface ServerCharacterStateMessage {
+  type: 'CHARACTER_STATE';
+  sheet: CharacterSheet;
+  combatStats: CombatStats;
+}
+
+export interface ServerLevelUpMessage {
+  type: 'LEVEL_UP';
+  newLevel: number;
+  attributePointsGained: number;
+  growthIncreases: Partial<Attributes>;
+}
 
 export type ServerMessage =
   | ServerWorldStateMessage
@@ -162,4 +191,6 @@ export type ServerMessage =
   | ServerItemPickedUpMessage
   | ServerItemSpawnMessage
   | ServerInventoryMessage
-  | ServerCombatMessage;
+  | ServerCombatMessage
+  | ServerCharacterStateMessage
+  | ServerLevelUpMessage;

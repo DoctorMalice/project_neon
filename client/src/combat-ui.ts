@@ -186,6 +186,7 @@ export class CombatUI {
           </div>
           <span class="combat-hp-text">${a.stats.hp}/${a.stats.maxHp} HP</span>
           ${a.stats.maxMp > 0 ? `<div class="combat-bar-container mp-bar"><div class="combat-bar mp" style="width:${mpPct}%"></div></div><span class="combat-mp-text">${a.stats.mp}/${a.stats.maxMp} MP</span>` : ''}
+          ${a.stats.maxSp > 0 ? `<div class="combat-bar-container sp-bar"><div class="combat-bar sp" style="width:${Math.max(0, a.stats.sp / a.stats.maxSp * 100)}%"></div></div><span class="combat-sp-text">${a.stats.sp}/${a.stats.maxSp} SP</span>` : ''}
         </div>`;
       })
       .join('');
