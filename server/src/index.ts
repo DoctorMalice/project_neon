@@ -223,6 +223,15 @@ wss.on('connection', (ws) => {
         return;
       }
 
+      // Check if this token is already in use by an active player
+      for (const [existingId, existingToken] of playerTokens) {
+        if (existingToken === msg.token && players.has(existingId)) {
+          send(ws, { type: 'ALREADY_CONNECTED', reason: 'You are already connected in another session' });
+          ws.close();
+          return;
+        }
+      }
+
       const id = String(nextPlayerId++);
       const token = msg.token;
 

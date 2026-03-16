@@ -146,6 +146,11 @@ export interface ServerReconnectFailedMessage {
   type: 'RECONNECT_FAILED';
 }
 
+export interface ServerAlreadyConnectedMessage {
+  type: 'ALREADY_CONNECTED';
+  reason: string;
+}
+
 export interface ServerPongMessage {
   type: 'PONG';
   timestamp: number;
@@ -204,4 +209,5 @@ export type ServerMessage =
   | ServerCombatMessage
   | ServerCharacterStateMessage
   | ServerLevelUpMessage
-  | ServerReconnectFailedMessage;
+  | ServerReconnectFailedMessage
+  | ServerAlreadyConnectedMessage;

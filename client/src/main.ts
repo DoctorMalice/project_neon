@@ -131,6 +131,12 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
       return;
     }
 
+    // Handle already connected in another session
+    if (msg.type === 'ALREADY_CONNECTED') {
+      alert(msg.reason);
+      return;
+    }
+
     // Handle character messages
     if (msg.type === 'CHARACTER_STATE') {
       characterState = msg.sheet;
