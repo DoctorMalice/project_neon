@@ -51,14 +51,14 @@ export class CombatUI {
           <span id="combat-round-label">Combat</span>
         </div>
         <div id="combat-participants">
-          <div id="combat-enemies-col">
-            <div class="combat-section-label enemy-label">Enemies</div>
-            <div id="combat-enemies"></div>
-          </div>
-          <div id="combat-vs">VS</div>
           <div id="combat-allies-col">
             <div class="combat-section-label ally-label">Allies</div>
             <div id="combat-allies"></div>
+          </div>
+          <div id="combat-vs">VS</div>
+          <div id="combat-enemies-col">
+            <div class="combat-section-label enemy-label">Enemies</div>
+            <div id="combat-enemies"></div>
           </div>
         </div>
         <div id="combat-log"></div>
