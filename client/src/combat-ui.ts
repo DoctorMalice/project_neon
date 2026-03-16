@@ -11,20 +11,20 @@ import {
 export type CombatActionCallback = (action: CombatAction) => void;
 
 const STRATEGY_LABELS: Record<CombatStrategy, string> = {
-  technical: 'Tech',
-  accurate: 'Acc',
-  strong: 'Str',
-  fast: 'Fst',
-  defensive: 'Def',
-  agile: 'Agi',
+  technical: 'Technical',
+  accurate: 'Accurate',
+  strong: 'Strong',
+  fast: 'Fast',
+  defensive: 'Defensive',
+  agile: 'Agile',
 };
 
 const DAMAGE_TYPE_LABELS: Record<PhysicalDamageType, string> = {
-  slicing: 'Sli',
-  piercing: 'Pie',
-  bludgeoning: 'Blu',
-  crushing: 'Cru',
-  chopping: 'Cho',
+  slicing: 'Slicing',
+  piercing: 'Piercing',
+  bludgeoning: 'Bludgeon',
+  crushing: 'Crushing',
+  chopping: 'Chopping',
 };
 
 export class CombatUI {
@@ -47,12 +47,30 @@ export class CombatUI {
 
     this.overlay.innerHTML = `
       <div id="combat-panel">
-        <div id="combat-enemies"></div>
+        <div id="combat-header">
+          <span id="combat-round-label">Combat</span>
+        </div>
+        <div id="combat-participants">
+          <div id="combat-enemies-col">
+            <div class="combat-section-label enemy-label">Enemies</div>
+            <div id="combat-enemies"></div>
+          </div>
+          <div id="combat-vs">VS</div>
+          <div id="combat-allies-col">
+            <div class="combat-section-label ally-label">Allies</div>
+            <div id="combat-allies"></div>
+          </div>
+        </div>
         <div id="combat-log"></div>
-        <div id="combat-allies"></div>
         <div id="combat-controls">
-          <div id="combat-strategy-row" class="combat-btn-row"></div>
-          <div id="combat-damage-row" class="combat-btn-row"></div>
+          <div class="combat-control-group">
+            <div class="combat-control-label">Strategy</div>
+            <div id="combat-strategy-row" class="combat-btn-row"></div>
+          </div>
+          <div class="combat-control-group">
+            <div class="combat-control-label">Damage Type</div>
+            <div id="combat-damage-row" class="combat-btn-row"></div>
+          </div>
           <div class="combat-divider"></div>
           <div id="combat-action-row" class="combat-btn-row"></div>
         </div>
@@ -159,16 +177,23 @@ export class CombatUI {
   }
 
   updateState(state: CombatState, myPlayerId: string): void {
+    // Round label
+    const roundLabel = this.overlay.querySelector('#combat-round-label')!;
+    roundLabel.textContent = `Combat — Round ${state.round}`;
+
     // Enemies
     this.enemySection.innerHTML = state.enemies
       .map(e => {
         const pct = Math.max(0, e.stats.hp / e.stats.maxHp * 100);
-        return `<div class="combat-participant enemy">
-          <span class="combat-name">${e.name}</span>
-          <div class="combat-bar-container">
-            <div class="combat-bar hp" style="width:${pct}%"></div>
+        return `<div class="combat-card enemy">
+          <div class="combat-card-name">${e.name}</div>
+          <div class="combat-card-bar-row">
+            <span class="combat-bar-label">HP</span>
+            <div class="combat-bar-container">
+              <div class="combat-bar hp" style="width:${pct}%"></div>
+            </div>
+            <span class="combat-bar-value">${e.stats.hp}/${e.stats.maxHp}</span>
           </div>
-          <span class="combat-hp-text">${e.stats.hp}/${e.stats.maxHp} HP</span>
         </div>`;
       })
       .join('');
@@ -177,16 +202,37 @@ export class CombatUI {
     this.allySection.innerHTML = state.allies
       .map(a => {
         const hpPct = Math.max(0, a.stats.hp / a.stats.maxHp * 100);
-        const mpPct = a.stats.maxMp > 0 ? Math.max(0, a.stats.mp / a.stats.maxMp * 100) : 0;
         const isMe = a.id === myPlayerId;
-        return `<div class="combat-participant ally ${isMe ? 'me' : ''}">
-          <span class="combat-name">${a.name}${isMe ? ' (You)' : ''}</span>
-          <div class="combat-bar-container">
-            <div class="combat-bar hp" style="width:${hpPct}%"></div>
-          </div>
-          <span class="combat-hp-text">${a.stats.hp}/${a.stats.maxHp} HP</span>
-          ${a.stats.maxMp > 0 ? `<div class="combat-bar-container mp-bar"><div class="combat-bar mp" style="width:${mpPct}%"></div></div><span class="combat-mp-text">${a.stats.mp}/${a.stats.maxMp} MP</span>` : ''}
-          ${a.stats.maxSp > 0 ? `<div class="combat-bar-container sp-bar"><div class="combat-bar sp" style="width:${Math.max(0, a.stats.sp / a.stats.maxSp * 100)}%"></div></div><span class="combat-sp-text">${a.stats.sp}/${a.stats.maxSp} SP</span>` : ''}
+        let bars = `<div class="combat-card-bar-row">
+            <span class="combat-bar-label">HP</span>
+            <div class="combat-bar-container">
+              <div class="combat-bar hp" style="width:${hpPct}%"></div>
+            </div>
+            <span class="combat-bar-value">${a.stats.hp}/${a.stats.maxHp}</span>
+          </div>`;
+        if (a.stats.maxMp > 0) {
+          const mpPct = Math.max(0, a.stats.mp / a.stats.maxMp * 100);
+          bars += `<div class="combat-card-bar-row">
+            <span class="combat-bar-label">MP</span>
+            <div class="combat-bar-container mp-bar">
+              <div class="combat-bar mp" style="width:${mpPct}%"></div>
+            </div>
+            <span class="combat-bar-value">${a.stats.mp}/${a.stats.maxMp}</span>
+          </div>`;
+        }
+        if (a.stats.maxSp > 0) {
+          const spPct = Math.max(0, a.stats.sp / a.stats.maxSp * 100);
+          bars += `<div class="combat-card-bar-row">
+            <span class="combat-bar-label">SP</span>
+            <div class="combat-bar-container sp-bar">
+              <div class="combat-bar sp" style="width:${spPct}%"></div>
+            </div>
+            <span class="combat-bar-value">${a.stats.sp}/${a.stats.maxSp}</span>
+          </div>`;
+        }
+        return `<div class="combat-card ally ${isMe ? 'me' : ''}">
+          <div class="combat-card-name">${a.name}${isMe ? ' (You)' : ''}</div>
+          ${bars}
         </div>`;
       })
       .join('');
