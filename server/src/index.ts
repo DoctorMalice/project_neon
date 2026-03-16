@@ -116,7 +116,8 @@ function savePlayerState(playerId: string): void {
   const player = players.get(playerId);
   if (!token || !character || !player) return;
   const inv = inventories.get(playerId) ?? [];
-  persistence.savePlayer(token, player.displayName, character.sheet, inv);
+  const pos = { x: Math.round(player.position.x), y: Math.round(player.position.y) };
+  persistence.savePlayer(token, player.displayName, character.sheet, inv, pos);
 }
 
 function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>): void {
@@ -225,10 +226,11 @@ wss.on('connection', (ws) => {
       const id = String(nextPlayerId++);
       const token = msg.token;
 
+      const spawnPos = saved.position ?? findSpawnPoint();
       player = {
         id,
         displayName: saved.displayName,
-        position: findSpawnPoint(),
+        position: { x: spawnPos.x, y: spawnPos.y },
         path: [],
         pathIndex: 0,
         ws,
