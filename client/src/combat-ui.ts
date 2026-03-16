@@ -1,5 +1,6 @@
 import {
   COMBAT_STRATEGIES,
+  COMBAT_ACTION_TIMEOUT_MS,
   PHYSICAL_DAMAGE_TYPES,
   type CombatState,
   type CombatStrategy,
@@ -39,6 +40,9 @@ export class CombatUI {
   private selectedDamageType: PhysicalDamageType = 'slicing';
   private onAction: CombatActionCallback | null = null;
   private actionsEnabled = false;
+  private timerInterval: ReturnType<typeof setInterval> | null = null;
+  private turnDeadline = 0;
+  private serverTimeOffset = 0;
 
   constructor() {
     this.overlay = document.createElement('div');
@@ -49,6 +53,7 @@ export class CombatUI {
       <div id="combat-panel">
         <div id="combat-header">
           <span id="combat-round-label">Combat</span>
+          <span id="combat-timer"></span>
         </div>
         <div id="combat-participants">
           <div id="combat-allies-col">
@@ -170,16 +175,26 @@ export class CombatUI {
 
   hide(): void {
     this.overlay.style.display = 'none';
+    this.stopTimer();
   }
 
   get isVisible(): boolean {
     return this.overlay.style.display !== 'none';
   }
 
+  setServerTimeOffset(offset: number): void {
+    this.serverTimeOffset = offset;
+  }
+
   updateState(state: CombatState, myPlayerId: string): void {
     // Round label
     const roundLabel = this.overlay.querySelector('#combat-round-label')!;
     roundLabel.textContent = `Combat — Round ${state.round}`;
+
+    // Timer
+    this.turnDeadline = state.turnDeadline;
+    this.updateTimer();
+    this.startTimer();
 
     // Enemies
     this.enemySection.innerHTML = state.enemies
@@ -230,9 +245,22 @@ export class CombatUI {
             <span class="combat-bar-value">${a.stats.sp}/${a.stats.maxSp}</span>
           </div>`;
         }
+
+        // Ally status (only show for other allies during awaiting_action phase)
+        let statusHtml = '';
+        if (!isMe && a.alive && state.phase === 'awaiting_action') {
+          const isReady = state.readyPlayerIds.includes(a.id);
+          if (isReady) {
+            statusHtml = `<div class="combat-ally-status ready">Ready!</div>`;
+          } else {
+            statusHtml = `<div class="combat-ally-status deciding">Deciding next move...</div>`;
+          }
+        }
+
         return `<div class="combat-card ally ${isMe ? 'me' : ''}">
           <div class="combat-card-name">${a.name}${isMe ? ' (You)' : ''}</div>
           ${bars}
+          ${statusHtml}
         </div>`;
       })
       .join('');
@@ -289,5 +317,36 @@ export class CombatUI {
     el.className = 'combat-status';
     el.textContent = text;
     this.controlsSection.appendChild(el);
+  }
+
+  private startTimer(): void {
+    this.stopTimer();
+    this.timerInterval = setInterval(() => this.updateTimer(), 250);
+  }
+
+  private stopTimer(): void {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+  }
+
+  private updateTimer(): void {
+    const timerEl = this.overlay.querySelector('#combat-timer')!;
+    if (!this.turnDeadline) {
+      timerEl.textContent = '';
+      return;
+    }
+    const now = Date.now() + this.serverTimeOffset;
+    const remaining = Math.max(0, Math.ceil((this.turnDeadline - now) / 1000));
+    const total = Math.ceil(COMBAT_ACTION_TIMEOUT_MS / 1000);
+    timerEl.textContent = `${remaining}s`;
+    timerEl.classList.toggle('combat-timer-urgent', remaining <= 5);
+
+    // Update the timer bar width
+    const barEl = this.overlay.querySelector('#combat-timer-bar') as HTMLElement | null;
+    if (barEl) {
+      barEl.style.width = `${Math.max(0, (remaining / total) * 100)}%`;
+    }
   }
 }

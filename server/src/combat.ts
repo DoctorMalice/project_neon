@@ -300,13 +300,13 @@ function resolveRound(combat: CombatInstance): void {
   combat.state.awaitingActionFrom = combat.state.allies.filter(a => a.alive).map(a => a.id);
   combat.playerActions.clear();
 
+  // Reset deadline and ready state before broadcasting
+  startActionTimeout(combat);
+
   // Send update to all players
   for (const player of combat.players.values()) {
     sendToPlayer(player, { type: 'COMBAT_UPDATE', state: combat.state });
   }
-
-  // Start action timeout
-  startActionTimeout(combat);
 }
 
 function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'): void {
@@ -356,6 +356,8 @@ function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'
 
 function startActionTimeout(combat: CombatInstance): void {
   if (combat.actionTimeout) clearTimeout(combat.actionTimeout);
+  combat.state.turnDeadline = Date.now() + COMBAT_ACTION_TIMEOUT_MS;
+  combat.state.readyPlayerIds = [];
   combat.actionTimeout = setTimeout(() => {
     // Auto-defend for anyone who hasn't submitted
     for (const playerId of combat.state.awaitingActionFrom) {
@@ -403,6 +405,8 @@ export function createCombat(
     enemies: [enemyParticipant],
     log: [],
     awaitingActionFrom: [player.id],
+    turnDeadline: Date.now() + COMBAT_ACTION_TIMEOUT_MS,
+    readyPlayerIds: [],
   };
 
   const combat: CombatInstance = {
@@ -459,10 +463,16 @@ export function submitAction(playerId: string, combatId: string, action: CombatA
 
   combat.playerActions.set(playerId, action);
   combat.state.awaitingActionFrom = combat.state.awaitingActionFrom.filter(id => id !== playerId);
+  combat.state.readyPlayerIds.push(playerId);
 
   // If all actions in, resolve round
   if (combat.state.awaitingActionFrom.length === 0) {
     resolveRound(combat);
+  } else {
+    // Broadcast updated ready status to all players
+    for (const player of combat.players.values()) {
+      sendToPlayer(player, { type: 'COMBAT_UPDATE', state: combat.state });
+    }
   }
 
   return true;

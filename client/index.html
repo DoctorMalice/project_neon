@@ -353,10 +353,18 @@
       padding: 12px 20px;
       background: rgba(200, 184, 138, 0.06);
       border-bottom: 1px solid rgba(200, 184, 138, 0.15);
+      display: flex; align-items: center; justify-content: space-between;
     }
     #combat-round-label {
       font-size: 14px; font-weight: 700; color: #e8d8a8;
       letter-spacing: 0.5px;
+    }
+    #combat-timer {
+      font-size: 13px; font-weight: 700; color: #c8b88a;
+      font-variant-numeric: tabular-nums;
+    }
+    #combat-timer.combat-timer-urgent {
+      color: #e85040;
     }
 
     /* Participants area */
@@ -368,6 +376,9 @@
     #combat-enemies-col, #combat-allies-col {
       flex: 1; display: flex; flex-direction: column; gap: 6px;
       min-width: 0;
+    }
+    #combat-enemies, #combat-allies {
+      display: flex; flex-direction: column; gap: 6px;
     }
     #combat-vs {
       display: flex; align-items: center; justify-content: center;
@@ -430,6 +441,20 @@
     .combat-bar.mp { background: linear-gradient(90deg, #558, #77a); }
     .combat-bar.sp { background: linear-gradient(90deg, #a85, #cb7); }
     .combat-card.ally .combat-bar.hp { background: linear-gradient(90deg, #5a4, #7c6); }
+
+    /* Ally status */
+    .combat-ally-status {
+      font-size: 10px; font-weight: 600;
+      padding: 2px 0;
+      letter-spacing: 0.3px;
+    }
+    .combat-ally-status.deciding {
+      color: #a89860;
+      font-style: italic;
+    }
+    .combat-ally-status.ready {
+      color: #6cb86c;
+    }
 
     /* Combat log */
     #combat-log {

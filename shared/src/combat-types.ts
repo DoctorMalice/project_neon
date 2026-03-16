@@ -127,6 +127,8 @@ export interface CombatState {
   enemies: CombatParticipant[];
   log: CombatLogEntry[];
   awaitingActionFrom: string[];
+  turnDeadline: number;    // server timestamp (ms) when auto-defend kicks in
+  readyPlayerIds: string[]; // players who have submitted their action this round
 }
 
 // ---- Map enemy spawn ----
