@@ -8,7 +8,9 @@ import {
   type CombatAction,
   type CombatLogEntry,
   type CombatParticipant,
+  type Equipment,
   type InventoryItem,
+  getEquippedWeaponDamageTypes,
 } from 'shared';
 
 export type CombatActionCallback = (action: CombatAction) => void;
@@ -126,20 +128,8 @@ export class CombatUI {
       strategyRow.appendChild(btn);
     }
 
-    // Damage type buttons
-    for (const dt of PHYSICAL_DAMAGE_TYPES) {
-      const btn = document.createElement('button');
-      btn.className = 'combat-toggle-btn';
-      btn.textContent = DAMAGE_TYPE_LABELS[dt];
-      btn.dataset.damageType = dt;
-      if (dt === this.selectedDamageType) btn.classList.add('active');
-      btn.addEventListener('click', () => {
-        this.selectedDamageType = dt;
-        damageRow.querySelectorAll('.combat-toggle-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-      });
-      damageRow.appendChild(btn);
-    }
+    // Damage type buttons are built dynamically via setAvailableDamageTypes
+    this.setAvailableDamageTypes(PHYSICAL_DAMAGE_TYPES as unknown as PhysicalDamageType[]);
 
     // Action buttons
     const attackBtn = document.createElement('button');
@@ -181,11 +171,38 @@ export class CombatUI {
     this.onAction = cb;
   }
 
-  show(state: CombatState, myPlayerId: string): void {
+  setAvailableDamageTypes(types: PhysicalDamageType[]): void {
+    const damageRow = this.overlay.querySelector('#combat-damage-row')!;
+    damageRow.innerHTML = '';
+
+    // If current selection isn't in the new list, switch to first available
+    if (!types.includes(this.selectedDamageType)) {
+      this.selectedDamageType = types[0] ?? 'bludgeoning';
+    }
+
+    for (const dt of types) {
+      const btn = document.createElement('button');
+      btn.className = 'combat-toggle-btn';
+      btn.textContent = DAMAGE_TYPE_LABELS[dt];
+      btn.dataset.damageType = dt;
+      if (dt === this.selectedDamageType) btn.classList.add('active');
+      btn.addEventListener('click', () => {
+        this.selectedDamageType = dt;
+        damageRow.querySelectorAll('.combat-toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+      damageRow.appendChild(btn);
+    }
+  }
+
+  show(state: CombatState, myPlayerId: string, equipment?: Equipment): void {
     this.overlay.style.display = 'flex';
     this.resultSection.style.display = 'none';
     this.controlsSection.style.display = '';
     this.isInPlayback = false;
+    if (equipment) {
+      this.setAvailableDamageTypes(getEquippedWeaponDamageTypes(equipment));
+    }
     this.updateState(state, myPlayerId);
   }
 

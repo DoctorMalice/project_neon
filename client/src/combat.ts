@@ -1,4 +1,4 @@
-import type { CombatState, ServerMessage, InventoryItem } from 'shared';
+import type { CombatState, ServerMessage, InventoryItem, Equipment } from 'shared';
 import { CombatUI } from './combat-ui';
 import type { Network } from './network';
 
@@ -7,6 +7,7 @@ export class Combat {
   private network: Network;
   private currentCombatId: string | null = null;
   private myPlayerId: string | null = null;
+  private playerEquipment: Equipment = {};
 
   // Queued messages that arrive during playback
   private pendingUpdate: { state: CombatState; autoDefended: boolean } | null = null;
@@ -34,13 +35,17 @@ export class Combat {
     this.myPlayerId = id;
   }
 
+  setEquipment(equipment: Equipment): void {
+    this.playerEquipment = equipment;
+  }
+
   handleMessage(msg: ServerMessage): boolean {
     switch (msg.type) {
       case 'COMBAT_START':
         this.currentCombatId = msg.state.combatId;
         this.pendingUpdate = null;
         this.pendingEnd = null;
-        this.ui.show(msg.state, this.myPlayerId!);
+        this.ui.show(msg.state, this.myPlayerId!, this.playerEquipment);
         return true;
 
       case 'COMBAT_UPDATE':

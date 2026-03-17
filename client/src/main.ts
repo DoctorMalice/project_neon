@@ -142,6 +142,7 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
       characterState = msg.sheet;
       characterPanel.update(msg.sheet, msg.combatStats);
       inventory.updateEquipment(msg.equipment);
+      combatManager.setEquipment(msg.equipment);
       return;
     }
     if (msg.type === 'LEVEL_UP') {
