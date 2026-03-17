@@ -320,10 +320,13 @@ function resolveRound(combat: CombatInstance): void {
   // Reset deadline and ready state before broadcasting
   startActionTimeout(combat);
 
-  // Send update to all players
+  // Send update to all players (log still has this round's entries)
   for (const player of combat.players.values()) {
     sendToPlayer(player, { type: 'COMBAT_UPDATE', state: combat.state });
   }
+
+  // Clear log after broadcasting so subsequent ready-status updates don't re-trigger playback
+  combat.state.log = [];
 }
 
 function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'): void {
