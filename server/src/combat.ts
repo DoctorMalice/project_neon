@@ -515,20 +515,22 @@ export function handleDisconnect(playerId: string): void {
 
     // Remove from combat
     combat.players.delete(playerId);
-    const ally = combat.state.allies.find(a => a.id === playerId);
-    if (ally) {
-      ally.alive = false;
-      ally.stats.hp = 0;
-    }
+    combat.state.allies = combat.state.allies.filter(a => a.id !== playerId);
     combat.state.awaitingActionFrom = combat.state.awaitingActionFrom.filter(id => id !== playerId);
+    combat.state.readyPlayerIds = combat.state.readyPlayerIds.filter(id => id !== playerId);
     combat.playerActions.delete(playerId);
 
-    // If no allies alive or no players left, end combat
-    if (combat.players.size === 0 || combat.state.allies.every(a => !a.alive)) {
+    // If no allies left or no players connected, end combat
+    if (combat.players.size === 0 || combat.state.allies.length === 0) {
       combat.state.phase = 'defeat';
       endCombat(combat, 'defeat');
     } else if (combat.state.awaitingActionFrom.length === 0 && combat.state.phase === 'awaiting_action') {
       resolveRound(combat);
+    } else {
+      // Notify remaining players that an ally disconnected
+      for (const player of combat.players.values()) {
+        sendToPlayer(player, { type: 'COMBAT_UPDATE', state: combat.state });
+      }
     }
   }
 }
