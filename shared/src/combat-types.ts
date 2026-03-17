@@ -113,12 +113,15 @@ export interface CombatLogEntry {
 
 export type CombatPhase = 'awaiting_action' | 'resolving' | 'victory' | 'defeat' | 'fled';
 
+import type { Equipment } from './items';
+
 export interface CombatParticipant {
   id: string;
   name: string;
   isEnemy: boolean;
   stats: CombatStats;
   alive: boolean;
+  equipment: Equipment;
 }
 
 export interface CombatState {

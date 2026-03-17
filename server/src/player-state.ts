@@ -5,9 +5,15 @@ import {
   type AttributeKey,
   type CharacterSheet,
   type CombatStats,
+  type Equipment,
+  type EquipSlot,
+  type InventoryItem,
   ATTRIBUTE_KEYS,
   STARTING_ATTRIBUTE_POINTS,
   ATTRIBUTE_POINTS_PER_LEVEL,
+  EQUIP_SLOTS,
+  HAND_SLOTS,
+  ITEM_DEFS,
   computeBaseAttributes,
   computeGrowths,
   deriveCombatStats,
@@ -17,6 +23,7 @@ import {
 export interface ServerCharacter {
   sheet: CharacterSheet;
   combatStats: CombatStats;
+  equipment: Equipment;
 }
 
 export function createCharacter(
@@ -60,6 +67,7 @@ export function createCharacter(
   return {
     sheet,
     combatStats: deriveCombatStats(sheet),
+    equipment: {},
   };
 }
 
@@ -121,6 +129,92 @@ export function allocateAttributes(character: ServerCharacter, changes: Partial<
     if (val && val > 0) {
       character.sheet.attributes[key] += val;
     }
+  }
+
+  character.combatStats = deriveCombatStats(character.sheet);
+  return true;
+}
+
+// ---- Equipment ----
+
+export function equipItem(
+  character: ServerCharacter,
+  inventory: InventoryItem[],
+  itemDefId: string,
+  slot: EquipSlot,
+): boolean {
+  const def = ITEM_DEFS[itemDefId];
+  if (!def) return false;
+  if (!EQUIP_SLOTS.includes(slot)) return false;
+  if (!def.equipSlots.includes(slot)) return false;
+
+  // Must have item in inventory (match by item def name)
+  const invEntry = inventory.find(i => i.itemType === def.name);
+  if (!invEntry || invEntry.quantity < 1) return false;
+
+  if (def.handedness === 'two_hand') {
+    // Unequip both hand slots
+    unequipSlot(character, inventory, 'wield_left');
+    unequipSlot(character, inventory, 'wield_right');
+    character.equipment.wield_left = itemDefId;
+    character.equipment.wield_right = itemDefId;
+  } else {
+    // Unequip current item in target slot
+    unequipSlot(character, inventory, slot);
+
+    // If equipping a one-handed weapon, check if a two-hander occupies the other slot
+    if (HAND_SLOTS.includes(slot)) {
+      const otherSlot: EquipSlot = slot === 'wield_left' ? 'wield_right' : 'wield_left';
+      const otherItemId = character.equipment[otherSlot];
+      if (otherItemId) {
+        const otherDef = ITEM_DEFS[otherItemId];
+        if (otherDef?.handedness === 'two_hand') {
+          unequipSlot(character, inventory, otherSlot);
+        }
+      }
+    }
+
+    character.equipment[slot] = itemDefId;
+  }
+
+  // Remove from inventory
+  invEntry.quantity -= 1;
+  if (invEntry.quantity <= 0) {
+    const idx = inventory.indexOf(invEntry);
+    inventory.splice(idx, 1);
+  }
+
+  character.combatStats = deriveCombatStats(character.sheet);
+  return true;
+}
+
+export function unequipSlot(
+  character: ServerCharacter,
+  inventory: InventoryItem[],
+  slot: EquipSlot,
+): boolean {
+  const itemDefId = character.equipment[slot];
+  if (!itemDefId) return false;
+
+  const def = ITEM_DEFS[itemDefId];
+  if (!def) {
+    delete character.equipment[slot];
+    return false;
+  }
+
+  if (def.handedness === 'two_hand') {
+    delete character.equipment.wield_left;
+    delete character.equipment.wield_right;
+  } else {
+    delete character.equipment[slot];
+  }
+
+  // Return to inventory
+  const existing = inventory.find(i => i.itemType === def.name);
+  if (existing) {
+    existing.quantity += 1;
+  } else {
+    inventory.push({ itemType: def.name, quantity: 1 });
   }
 
   character.combatStats = deriveCombatStats(character.sheet);

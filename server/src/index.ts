@@ -21,7 +21,8 @@ import {
 } from 'shared';
 import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from './enemies';
 import * as combat from './combat';
-import { createCharacter, addXP, allocateAttributes, type ServerCharacter } from './player-state';
+import { createCharacter, addXP, allocateAttributes, equipItem, unequipSlot, type ServerCharacter } from './player-state';
+import { type EquipSlot, EQUIP_SLOTS, ITEM_DEFS, getEquippedWeaponDamageTypes } from 'shared';
 import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, deriveCombatStats } from 'shared';
 import * as persistence from './persistence';
 
@@ -117,7 +118,7 @@ function savePlayerState(playerId: string): void {
   if (!token || !character || !player) return;
   const inv = inventories.get(playerId) ?? [];
   const pos = { x: Math.round(player.position.x), y: Math.round(player.position.y) };
-  persistence.savePlayer(token, player.displayName, character.sheet, inv, pos);
+  persistence.savePlayer(token, player.displayName, character.sheet, inv, character.equipment, pos);
 }
 
 function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>): void {
@@ -158,6 +159,7 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
         type: 'CHARACTER_STATE',
         sheet: character.sheet,
         combatStats: character.combatStats,
+        equipment: character.equipment,
       });
       savePlayerState(playerId);
     }
@@ -250,6 +252,7 @@ wss.on('connection', (ws) => {
       const character: ServerCharacter = {
         sheet: saved.sheet,
         combatStats: deriveCombatStats(saved.sheet),
+        equipment: saved.equipment ?? {},
       };
       characters.set(id, character);
       playerTokens.set(id, token);
@@ -259,7 +262,7 @@ wss.on('connection', (ws) => {
 
       // Send join info
       send(ws, { type: 'JOINED', playerId: id, token });
-      send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats });
+      send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment });
       send(ws, { type: 'MAP', width: map[0].length, height: map.length, tiles: map.map((row) => row.map((t) => t as number)) });
       send(ws, { type: 'WORLD_STATE', players: getPlayerStates() });
       send(ws, { type: 'GROUND_ITEMS', items: getActiveGroundItems() });
@@ -316,6 +319,7 @@ wss.on('connection', (ws) => {
         type: 'CHARACTER_STATE',
         sheet: character.sheet,
         combatStats: character.combatStats,
+        equipment: character.equipment,
       });
 
       // Send the map
@@ -460,7 +464,40 @@ wss.on('connection', (ws) => {
           type: 'CHARACTER_STATE',
           sheet: character.sheet,
           combatStats: character.combatStats,
+          equipment: character.equipment,
         });
+        savePlayerState(player.id);
+      }
+      return;
+    }
+
+    if (msg.type === 'EQUIP') {
+      if (playerCombats.has(player.id)) return; // can't equip in combat
+      const character = characters.get(player.id);
+      if (!character) return;
+      const inv = inventories.get(player.id) ?? [];
+      if (!EQUIP_SLOTS.includes(msg.slot as EquipSlot)) return;
+      const success = equipItem(character, inv, msg.itemId, msg.slot as EquipSlot);
+      if (success) {
+        inventories.set(player.id, inv);
+        send(ws, { type: 'INVENTORY', items: inv });
+        send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment });
+        savePlayerState(player.id);
+      }
+      return;
+    }
+
+    if (msg.type === 'UNEQUIP') {
+      if (playerCombats.has(player.id)) return;
+      const character = characters.get(player.id);
+      if (!character) return;
+      const inv = inventories.get(player.id) ?? [];
+      if (!EQUIP_SLOTS.includes(msg.slot as EquipSlot)) return;
+      const success = unequipSlot(character, inv, msg.slot as EquipSlot);
+      if (success) {
+        inventories.set(player.id, inv);
+        send(ws, { type: 'INVENTORY', items: inv });
+        send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment });
         savePlayerState(player.id);
       }
       return;
@@ -478,9 +515,10 @@ wss.on('connection', (ws) => {
       const dy = Math.abs(player.position.y - spawn.y);
       if (dx > COMBAT_ENGAGE_RANGE || dy > COMBAT_ENGAGE_RANGE) return;
 
-      // Get player's combat stats
+      // Get player's combat stats and equipment
       const charForAttack = characters.get(player.id);
       const attackStats = charForAttack ? deriveCombatStats(charForAttack.sheet) : undefined;
+      const attackEquipment = charForAttack?.equipment ?? {};
 
       // Check if enemy is already in combat (co-op join)
       const existingCombatId = combat.getCombatForEnemy(msg.enemySpawnId);
@@ -489,6 +527,7 @@ wss.on('connection', (ws) => {
           { id: player.id, displayName: player.displayName, ws: player.ws },
           existingCombatId,
           attackStats,
+          attackEquipment,
         );
         if (joined) {
           playerCombats.set(player.id, existingCombatId);
@@ -505,6 +544,7 @@ wss.on('connection', (ws) => {
         onEnemyDied,
         onPlayerFled,
         attackStats,
+        attackEquipment,
       );
       if (combatId) {
         playerCombats.set(player.id, combatId);
@@ -538,10 +578,12 @@ wss.on('connection', (ws) => {
       }
       const charForJoin = characters.get(player.id);
       const joinStats = charForJoin ? deriveCombatStats(charForJoin.sheet) : undefined;
+      const joinEquipment = charForJoin?.equipment ?? {};
       const joined = combat.joinCombat(
         { id: player.id, displayName: player.displayName, ws: player.ws },
         msg.combatId,
         joinStats,
+        joinEquipment,
       );
       if (joined) {
         playerCombats.set(player.id, msg.combatId);

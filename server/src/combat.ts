@@ -24,6 +24,8 @@ import {
   type WeightedEntry,
   type InventoryItem,
   type ServerMessage,
+  type Equipment,
+  resolveEquipmentBonuses,
 } from 'shared';
 import { ENEMY_DEFS, enemySpawns, type ServerEnemySpawn } from './enemies';
 import type { WebSocket } from 'ws';
@@ -70,13 +72,14 @@ function clamp(min: number, max: number, value: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function makeParticipant(id: string, name: string, isEnemy: boolean, stats: CombatStats): CombatParticipant {
+function makeParticipant(id: string, name: string, isEnemy: boolean, stats: CombatStats, equipment: Equipment = {}): CombatParticipant {
   return {
     id,
     name,
     isEnemy,
     stats: { ...stats, damageTypeBonuses: { ...stats.damageTypeBonuses }, resistances: { ...stats.resistances }, immunities: [...stats.immunities] },
     alive: true,
+    equipment,
   };
 }
 
@@ -101,16 +104,16 @@ function resolveDamage(
   const atkBonus = STRATEGY_BONUSES[attackerStrategy];
   const defBonus = STRATEGY_BONUSES[defenderStrategy];
 
-  // Attacker offense: base stats + attacker strategy + damage type bonuses
-  const atkDmgBonus = attacker.stats.damageTypeBonuses[damageType] ?? 0;
-  const effectiveAccuracy = attacker.stats.accuracy + atkBonus.accuracy + atkDmgBonus;
-  const effectivePower = attacker.stats.power + atkBonus.power + atkDmgBonus;
+  // Attacker offense: base stats + attacker strategy + equipment bonuses for this damage type
+  const atkEquip = resolveEquipmentBonuses(attacker.equipment, damageType);
+  const effectiveAccuracy = attacker.stats.accuracy + atkBonus.accuracy + atkEquip.accuracy;
+  const effectivePower = attacker.stats.power + atkBonus.power + atkEquip.power;
   const effectiveCrit = attacker.stats.critBonus;
 
-  // Defender defense: base stats + defender strategy + damage type resistances
-  const defResist = defender.stats.resistances[damageType] ?? 0;
-  const effectiveDodge = defender.stats.dodge + defBonus.dodge + defResist;
-  const effectiveDefense = defender.stats.defense + defBonus.defense + defResist;
+  // Defender defense: base stats + defender strategy + equipment bonuses for this damage type
+  const defEquip = resolveEquipmentBonuses(defender.equipment, damageType);
+  const effectiveDodge = defender.stats.dodge + defBonus.dodge + defEquip.dodge;
+  const effectiveDefense = defender.stats.defense + defBonus.defense + defEquip.defense;
 
   // Step 1: Immunity check
   if (defender.stats.immunities.includes(damageType)) {
@@ -426,6 +429,7 @@ export function createCombat(
   onEnemyDied: CombatInstance['onEnemyDied'],
   onPlayerFled: CombatInstance['onPlayerFled'],
   playerStats?: CombatStats,
+  playerEquipment?: Equipment,
 ): string | null {
   const spawn = enemySpawns.get(enemySpawnId);
   if (!spawn || !spawn.active) return null;
@@ -436,7 +440,7 @@ export function createCombat(
   const combatId = `combat_${nextCombatId++}`;
 
   const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
-  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats);
+  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats, playerEquipment ?? {});
   const enemyParticipant = makeParticipant(
     `enemy_${combatId}`,
     enemyDef.name,
@@ -478,7 +482,7 @@ export function createCombat(
   return combatId;
 }
 
-export function joinCombat(player: PlayerHandle, combatId: string, playerStats?: CombatStats): boolean {
+export function joinCombat(player: PlayerHandle, combatId: string, playerStats?: CombatStats, playerEquipment?: Equipment): boolean {
   const combat = combats.get(combatId);
   if (!combat) return false;
   if (combat.state.phase !== 'awaiting_action') return false;
@@ -486,7 +490,7 @@ export function joinCombat(player: PlayerHandle, combatId: string, playerStats?:
   if (combat.players.has(player.id)) return false;
 
   const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
-  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats);
+  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats, playerEquipment ?? {});
   combat.state.allies.push(allyParticipant);
   combat.state.awaitingActionFrom.push(player.id);
   combat.players.set(player.id, player);

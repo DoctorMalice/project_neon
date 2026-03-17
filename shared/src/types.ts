@@ -92,7 +92,18 @@ export interface ClientReconnectMessage {
   token: string;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage;
+export interface ClientEquipMessage {
+  type: 'EQUIP';
+  itemId: string;
+  slot: string;
+}
+
+export interface ClientUnequipMessage {
+  type: 'UNEQUIP';
+  slot: string;
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage | ClientEquipMessage | ClientUnequipMessage;
 
 // ---- Server → Client messages ----
 
@@ -180,11 +191,13 @@ export interface ServerInventoryMessage {
 import type { CharacterSheet } from './character';
 import type { CombatStats } from './combat-types';
 import type { ServerCombatMessage } from './combat-messages';
+import type { Equipment } from './items';
 
 export interface ServerCharacterStateMessage {
   type: 'CHARACTER_STATE';
   sheet: CharacterSheet;
   combatStats: CombatStats;
+  equipment: Equipment;
 }
 
 export interface ServerLevelUpMessage {
