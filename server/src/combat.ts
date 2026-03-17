@@ -93,16 +93,24 @@ import { STRATEGY_BONUSES } from 'shared';
 function resolveDamage(
   attacker: CombatParticipant,
   defender: CombatParticipant,
-  strategy: CombatStrategy,
+  attackerStrategy: CombatStrategy,
+  defenderStrategy: CombatStrategy,
   damageType: DamageType,
   isDefending: boolean,
 ): CombatLogEntry {
-  const bonus = STRATEGY_BONUSES[strategy];
-  const effectiveAccuracy = attacker.stats.accuracy + bonus.accuracy;
-  const effectivePower = attacker.stats.power + bonus.power;
-  const effectiveDodge = defender.stats.dodge + (isDefending ? 0 : 0); // defender's dodge
-  const effectiveDefense = defender.stats.defense;
+  const atkBonus = STRATEGY_BONUSES[attackerStrategy];
+  const defBonus = STRATEGY_BONUSES[defenderStrategy];
+
+  // Attacker offense: base stats + attacker strategy + damage type bonuses
+  const atkDmgBonus = attacker.stats.damageTypeBonuses[damageType] ?? 0;
+  const effectiveAccuracy = attacker.stats.accuracy + atkBonus.accuracy + atkDmgBonus;
+  const effectivePower = attacker.stats.power + atkBonus.power + atkDmgBonus;
   const effectiveCrit = attacker.stats.critBonus;
+
+  // Defender defense: base stats + defender strategy + damage type resistances
+  const defResist = defender.stats.resistances[damageType] ?? 0;
+  const effectiveDodge = defender.stats.dodge + defBonus.dodge + defResist;
+  const effectiveDefense = defender.stats.defense + defBonus.defense + defResist;
 
   // Step 1: Immunity check
   if (defender.stats.immunities.includes(damageType)) {
@@ -269,7 +277,7 @@ function resolveRound(combat: CombatInstance): void {
     if (action.type === 'attack') {
       const target = combat.state.enemies.find(e => e.alive);
       if (target) {
-        const entry = resolveDamage(ally, target, action.strategy, action.damageType ?? 'bludgeoning', false);
+        const entry = resolveDamage(ally, target, action.strategy, 'technical', action.damageType ?? 'bludgeoning', false);
         combat.state.log.push(entry);
       }
     } else if (action.type === 'defend') {
@@ -299,11 +307,12 @@ function resolveRound(combat: CombatInstance): void {
     const isAttacking = Math.random() < 0.75;
 
     if (isAttacking) {
-      const strategy = rollWeighted(enemyDef.strategies);
+      const enemyStrategy = rollWeighted(enemyDef.strategies);
       const dmgType = rollWeighted(enemyDef.damageTypes);
       const playerAction = combat.playerActions.get(target.id);
       const isDefending = playerAction?.type === 'defend';
-      const entry = resolveDamage(enemy, target, strategy, dmgType, isDefending);
+      const playerStrategy = playerAction?.strategy ?? 'technical';
+      const entry = resolveDamage(enemy, target, enemyStrategy, playerStrategy, dmgType, isDefending);
       combat.state.log.push(entry);
     } else {
       combat.state.log.push({
