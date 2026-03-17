@@ -47,6 +47,32 @@ export const UNARMED_DAMAGE_TYPE: PhysicalDamageType = 'bludgeoning';
 // ---- Item registry ----
 
 export const ITEM_DEFS: Record<string, ItemDef> = {
+  wood_pieces: {
+    id: 'wood_pieces',
+    name: 'Wood Pieces',
+    description: 'Scraps of wood useful for crafting',
+    itemType: 'resource',
+    equipSlots: [],
+    handedness: null,
+    weaponType: null,
+    armorType: null,
+    damageTypes: [],
+    combatBonus: emptyBonus(),
+    combatPenalty: emptyBonus(),
+  },
+  weapon_parts: {
+    id: 'weapon_parts',
+    name: 'Weapon Parts',
+    description: 'Salvaged weapon components',
+    itemType: 'resource',
+    equipSlots: [],
+    handedness: null,
+    weaponType: null,
+    armorType: null,
+    damageTypes: [],
+    combatBonus: emptyBonus(),
+    combatPenalty: emptyBonus(),
+  },
   wood_knife: {
     id: 'wood_knife',
     name: 'Wood Knife',

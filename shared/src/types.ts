@@ -103,7 +103,12 @@ export interface ClientUnequipMessage {
   slot: string;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage | ClientEquipMessage | ClientUnequipMessage;
+export interface ClientCraftMessage {
+  type: 'CRAFT';
+  recipeId: string;
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage | ClientEquipMessage | ClientUnequipMessage | ClientCraftMessage;
 
 // ---- Server → Client messages ----
 

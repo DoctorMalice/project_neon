@@ -1,4 +1,4 @@
-import { ITEM_DEFS, type Equipment, type EquipSlot, EQUIP_SLOTS } from 'shared';
+import { ITEM_DEFS, type Equipment, type EquipSlot, EQUIP_SLOTS, RECIPES, canCraft } from 'shared';
 import type { Network } from './network';
 
 // Reverse lookup: item name -> item def id
@@ -13,6 +13,7 @@ export class Inventory {
   private panel: HTMLElement;
   private list: HTMLElement;
   private equipSection: HTMLElement;
+  private craftSection: HTMLElement;
   private button: HTMLElement;
   private network: Network;
   private visible = false;
@@ -50,6 +51,16 @@ export class Inventory {
     this.equipSection = document.createElement('div');
     this.equipSection.className = 'inventory-list';
     this.panel.appendChild(this.equipSection);
+
+    // Crafting section
+    const craftHeader = document.createElement('div');
+    craftHeader.className = 'inventory-header';
+    craftHeader.textContent = 'Crafting';
+    this.panel.appendChild(craftHeader);
+
+    this.craftSection = document.createElement('div');
+    this.craftSection.className = 'inventory-list';
+    this.panel.appendChild(this.craftSection);
 
     document.getElementById('game-container')!.appendChild(this.panel);
 
@@ -165,6 +176,43 @@ export class Inventory {
       empty.className = 'inventory-empty';
       empty.textContent = 'Nothing equipped';
       this.equipSection.appendChild(empty);
+    }
+
+    // Crafting recipes
+    this.craftSection.innerHTML = '';
+    for (const recipe of Object.values(RECIPES)) {
+      const row = document.createElement('div');
+      row.className = 'craft-recipe';
+
+      const name = document.createElement('div');
+      name.className = 'craft-recipe-name';
+      name.textContent = recipe.name;
+      row.appendChild(name);
+
+      const ingredients = document.createElement('div');
+      ingredients.className = 'craft-ingredients';
+      for (const ing of recipe.inputs) {
+        const have = this.items.get(ing.itemName) ?? 0;
+        const enough = have >= ing.quantity;
+        const ingEl = document.createElement('span');
+        ingEl.className = `craft-ingredient ${enough ? 'have' : 'need'}`;
+        ingEl.textContent = `${ing.itemName} ${have}/${ing.quantity}`;
+        ingredients.appendChild(ingEl);
+      }
+      row.appendChild(ingredients);
+
+      const craftable = canCraft(recipe, this.items);
+      const craftBtn = document.createElement('button');
+      craftBtn.className = 'inv-equip-btn';
+      craftBtn.textContent = 'Craft';
+      craftBtn.disabled = !craftable;
+      if (!craftable) craftBtn.style.opacity = '0.4';
+      craftBtn.addEventListener('click', () => {
+        this.network.send({ type: 'CRAFT', recipeId: recipe.id });
+      });
+      row.appendChild(craftBtn);
+
+      this.craftSection.appendChild(row);
     }
   }
 }

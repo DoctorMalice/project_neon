@@ -6,3 +6,4 @@ export * from './combat-types';
 export * from './combat-messages';
 export * from './character';
 export * from './items';
+export * from './recipes';

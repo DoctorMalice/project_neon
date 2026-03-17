@@ -38,6 +38,8 @@ export const ENEMY_DEFS: Record<string, EnemyDef> = {
     ],
     dropTable: [
       { itemType: 'Gold Pieces', chance: 0.8, minQty: 1, maxQty: 5 },
+      { itemType: 'Wood Pieces', chance: 0.6, minQty: 1, maxQty: 3 },
+      { itemType: 'Weapon Parts', chance: 0.3, minQty: 1, maxQty: 1 },
     ],
     xpReward: 10,
   },

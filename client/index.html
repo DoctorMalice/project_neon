@@ -244,6 +244,27 @@
       min-width: 48px; flex: 0 !important;
     }
 
+    .craft-recipe {
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .craft-recipe:last-child { border-bottom: none; }
+    .craft-recipe-name {
+      font-size: 12px; font-weight: 600; color: #c8b88a;
+      margin-bottom: 3px;
+    }
+    .craft-ingredients {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      margin-bottom: 4px;
+    }
+    .craft-ingredient {
+      font-size: 11px; padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.04);
+    }
+    .craft-ingredient.have { color: #6cb86c; }
+    .craft-ingredient.need { color: #d05545; }
+
     .combat-label {
       position: absolute;
       color: #e85040;

@@ -22,7 +22,7 @@ import {
 import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from './enemies';
 import * as combat from './combat';
 import { createCharacter, addXP, allocateAttributes, equipItem, unequipSlot, type ServerCharacter } from './player-state';
-import { type EquipSlot, EQUIP_SLOTS, ITEM_DEFS, getEquippedWeaponDamageTypes } from 'shared';
+import { type EquipSlot, EQUIP_SLOTS, ITEM_DEFS, getEquippedWeaponDamageTypes, RECIPES, canCraft } from 'shared';
 import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, deriveCombatStats } from 'shared';
 import * as persistence from './persistence';
 
@@ -503,6 +503,37 @@ wss.on('connection', (ws) => {
         send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment });
         savePlayerState(player.id);
       }
+      return;
+    }
+
+    if (msg.type === 'CRAFT') {
+      if (playerCombats.has(player.id)) return;
+      const recipe = RECIPES[msg.recipeId];
+      if (!recipe) return;
+      const inv = inventories.get(player.id) ?? [];
+      if (!canCraft(recipe, inv)) return;
+
+      // Deduct inputs
+      for (const ing of recipe.inputs) {
+        const entry = inv.find(i => i.itemType === ing.itemName);
+        if (entry) {
+          entry.quantity -= ing.quantity;
+          if (entry.quantity <= 0) inv.splice(inv.indexOf(entry), 1);
+        }
+      }
+      // Add outputs
+      for (const out of recipe.outputs) {
+        const entry = inv.find(i => i.itemType === out.itemName);
+        if (entry) {
+          entry.quantity += out.quantity;
+        } else {
+          inv.push({ itemType: out.itemName, quantity: out.quantity });
+        }
+      }
+
+      inventories.set(player.id, inv);
+      send(ws, { type: 'INVENTORY', items: inv });
+      savePlayerState(player.id);
       return;
     }
 
