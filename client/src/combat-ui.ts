@@ -298,9 +298,8 @@ export class CombatUI {
   }
 
   private renderPlaybackLog(): void {
-    let html = this.shownLogEntries
-      .map(entry => `<div class="combat-log-entry${entry.crit ? ' crit' : ''}${entry.dodged ? ' dodged' : ''}">${entry.message}</div>`)
-      .join('');
+    const entry = this.shownLogEntries[this.shownLogEntries.length - 1];
+    let html = `<div class="combat-log-entry${entry.crit ? ' crit' : ''}${entry.dodged ? ' dodged' : ''}">${entry.message}</div>`;
 
     const hasMore = this.playbackIndex < this.playbackLog.length - 1;
     if (hasMore) {

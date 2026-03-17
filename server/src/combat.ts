@@ -171,7 +171,6 @@ function resolveDamage(
 
   let message = `${attacker.name} attacks ${defender.name} for ${damage} damage!`;
   if (crit) message = `Critical hit! ${message}`;
-  if (isDefending) message += ` (${defender.name} is defending)`;
 
   return {
     actor: attacker.name,
@@ -263,8 +262,13 @@ function resolveRound(combat: CombatInstance): void {
         const entry = resolveDamage(ally, target, action.strategy, action.damageType ?? 'bludgeoning', false);
         combat.state.log.push(entry);
       }
+    } else if (action.type === 'defend') {
+      combat.state.log.push({
+        actor: ally.name, actorId: ally.id, target: '', targetId: '', damage: 0,
+        crit: false, dodged: false, defended: true, immune: false,
+        message: `${ally.name} takes a defensive stance!`,
+      });
     }
-    // defend: no action needed, handled in damage pipeline
   }
 
   // Check if all enemies dead
