@@ -38,6 +38,7 @@ interface CombatInstance {
   playerActions: Map<string, CombatAction>;
   players: Map<string, PlayerHandle>;
   actionTimeout: ReturnType<typeof setTimeout> | null;
+  autoDefendedPlayerIds: Set<string>;
   onEnd: (combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>) => void;
   onEnemyDied: (spawn: ServerEnemySpawn) => void;
   onPlayerFled: (playerId: string) => void;
@@ -321,12 +322,17 @@ function resolveRound(combat: CombatInstance): void {
   startActionTimeout(combat);
 
   // Send update to all players (log still has this round's entries)
-  for (const player of combat.players.values()) {
-    sendToPlayer(player, { type: 'COMBAT_UPDATE', state: combat.state });
+  for (const [playerId, player] of combat.players) {
+    sendToPlayer(player, {
+      type: 'COMBAT_UPDATE',
+      state: combat.state,
+      autoDefended: combat.autoDefendedPlayerIds.has(playerId),
+    });
   }
 
-  // Clear log after broadcasting so subsequent ready-status updates don't re-trigger playback
+  // Clear after broadcasting so subsequent ready-status updates don't re-trigger playback
   combat.state.log = [];
+  combat.autoDefendedPlayerIds.clear();
 }
 
 function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'): void {
@@ -367,6 +373,7 @@ function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'
       result,
       xpGained: reward?.xp ?? 0,
       loot: reward?.loot ?? [],
+      autoDefended: combat.autoDefendedPlayerIds.has(playerId),
     });
   }
 
@@ -380,9 +387,11 @@ function startActionTimeout(combat: CombatInstance): void {
   combat.state.readyPlayerIds = [];
   combat.actionTimeout = setTimeout(() => {
     // Auto-defend for anyone who hasn't submitted
+    combat.autoDefendedPlayerIds.clear();
     for (const playerId of combat.state.awaitingActionFrom) {
       if (!combat.playerActions.has(playerId)) {
         combat.playerActions.set(playerId, { type: 'defend', strategy: 'technical' });
+        combat.autoDefendedPlayerIds.add(playerId);
       }
     }
     combat.state.awaitingActionFrom = [];
@@ -437,6 +446,7 @@ export function createCombat(
     playerActions: new Map(),
     players: new Map([[player.id, player]]),
     actionTimeout: null,
+    autoDefendedPlayerIds: new Set(),
     onEnd,
     onEnemyDied,
     onPlayerFled,

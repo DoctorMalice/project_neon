@@ -33,6 +33,7 @@ export interface ServerCombatStartMessage {
 export interface ServerCombatUpdateMessage {
   type: 'COMBAT_UPDATE';
   state: CombatState;
+  autoDefended?: boolean;  // true if this player was auto-defended (timed out)
 }
 
 export interface ServerCombatEndMessage {
@@ -41,6 +42,7 @@ export interface ServerCombatEndMessage {
   result: 'victory' | 'defeat' | 'fled';
   xpGained: number;
   loot: InventoryItem[];
+  autoDefended?: boolean;  // true if this player was auto-defended (timed out)
 }
 
 export interface ServerEnemySpawnsMessage {
