@@ -1,12 +1,17 @@
 import {
   COMBAT_RUN_CHANCE,
-  COMBAT_CRIT_BASE,
+  COMBAT_CRIT_BASE_PERCENT,
   COMBAT_CRIT_MULTIPLIER,
-  COMBAT_DODGE_BASE,
+  COMBAT_DODGE_BASE_PERCENT,
   COMBAT_DEFEND_REDUCTION,
+  COMBAT_BONUS_DIVISOR_CHANCE,
+  COMBAT_BONUS_DIVISOR_POWER,
+  COMBAT_BONUS_DIVISOR_ACCURACY,
+  COMBAT_BONUS_DIVISOR_DEFENSE,
   COMBAT_LEVEL_SCALE_PER_LEVEL,
   COMBAT_LEVEL_SCALE_MIN,
   COMBAT_LEVEL_SCALE_MAX,
+  COMBAT_LEVEL_CLOSE_BAND,
   COMBAT_ACTION_TIMEOUT_MS,
   type CombatState,
   type CombatParticipant,
@@ -115,8 +120,8 @@ function resolveDamage(
     };
   }
 
-  // Step 2: Dodge check
-  const dodgeChance = COMBAT_DODGE_BASE + (effectiveDodge / 50);
+  // Step 2: Dodge check — chance = (basePercent + bonus / divisor) / 100
+  const dodgeChance = clamp(0, 1, (COMBAT_DODGE_BASE_PERCENT + effectiveDodge / COMBAT_BONUS_DIVISOR_CHANCE) / 100);
   if (Math.random() < dodgeChance) {
     return {
       actor: attacker.name,
@@ -132,20 +137,21 @@ function resolveDamage(
     };
   }
 
-  // Step 3: Damage roll
-  const minDmg = 1 + Math.floor(effectiveAccuracy / 10);
-  const maxDmg = 1 + Math.floor(effectivePower / 10);
-  let damage = minDmg + Math.floor(Math.random() * (Math.max(maxDmg - minDmg + 1, 1)));
+  // Step 3: Damage roll — maxHit from power, minHit from accuracy, clamped [1, maxHit]
+  const maxHit = Math.max(1, 1 + Math.floor(effectivePower / COMBAT_BONUS_DIVISOR_POWER));
+  const minHit = clamp(1, maxHit, 1 + Math.floor(effectiveAccuracy / COMBAT_BONUS_DIVISOR_ACCURACY));
+  let damage = minHit + Math.floor(Math.random() * (maxHit - minHit + 1));
 
   // Step 4: Crit check
-  const critChance = COMBAT_CRIT_BASE + (effectiveCrit / 50);
+  const critChance = clamp(0, 1, (COMBAT_CRIT_BASE_PERCENT + effectiveCrit / COMBAT_BONUS_DIVISOR_CHANCE) / 100);
   const crit = Math.random() < critChance;
   if (crit) {
     damage = Math.floor(damage * COMBAT_CRIT_MULTIPLIER);
   }
 
-  // Step 5: Defense mitigation
-  damage = Math.floor(damage * (1 - effectiveDefense / 1000));
+  // Step 5: Defense mitigation — defensePct = defense / divisor, multiplier = 1 - pct/100
+  const defensePct = effectiveDefense / COMBAT_BONUS_DIVISOR_DEFENSE;
+  const mitigationMultiplier = Math.max(0, 1 - defensePct / 100);
 
   // Step 6: Level scaling
   const levelScale = clamp(
@@ -153,15 +159,18 @@ function resolveDamage(
     COMBAT_LEVEL_SCALE_MAX,
     1 + (attacker.stats.level - defender.stats.level) * COMBAT_LEVEL_SCALE_PER_LEVEL,
   );
-  damage = Math.floor(damage * levelScale);
+  damage = Math.floor(damage * mitigationMultiplier * levelScale);
 
   // Step 7: Defend reduction
   if (isDefending) {
     damage = Math.floor(damage * COMBAT_DEFEND_REDUCTION);
   }
 
-  // Step 8: Minimum 1 damage
-  damage = Math.max(1, damage);
+  // Step 8: Close-level band minimum — ensure at least 1 damage if within close band
+  const levelDelta = Math.abs(attacker.stats.level - defender.stats.level);
+  if (levelDelta <= COMBAT_LEVEL_CLOSE_BAND && damage < 1) {
+    damage = 1;
+  }
 
   // Apply damage
   defender.stats.hp -= damage;
