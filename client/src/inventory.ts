@@ -114,15 +114,28 @@ export class Inventory {
         if (defId) {
           const def = ITEM_DEFS[defId];
           if (def && def.equipSlots.length > 0) {
-            const equipBtn = document.createElement('button');
-            equipBtn.className = 'inv-equip-btn';
-            equipBtn.textContent = 'Equip';
-            equipBtn.addEventListener('click', () => {
-              // Pick first available slot
-              const slot = def.equipSlots[0];
-              this.network.send({ type: 'EQUIP', itemId: defId, slot });
-            });
-            row.appendChild(equipBtn);
+            const hasMultipleHandSlots = def.equipSlots.includes('wield_left') && def.equipSlots.includes('wield_right');
+            if (hasMultipleHandSlots && def.handedness !== 'two_hand') {
+              // Show separate buttons for each hand
+              for (const slot of ['wield_left', 'wield_right'] as const) {
+                const btn = document.createElement('button');
+                btn.className = 'inv-equip-btn';
+                btn.textContent = slot === 'wield_left' ? 'L' : 'R';
+                btn.title = slot === 'wield_left' ? 'Equip Left Hand' : 'Equip Right Hand';
+                btn.addEventListener('click', () => {
+                  this.network.send({ type: 'EQUIP', itemId: defId, slot });
+                });
+                row.appendChild(btn);
+              }
+            } else {
+              const equipBtn = document.createElement('button');
+              equipBtn.className = 'inv-equip-btn';
+              equipBtn.textContent = 'Equip';
+              equipBtn.addEventListener('click', () => {
+                this.network.send({ type: 'EQUIP', itemId: defId, slot: def.equipSlots[0] });
+              });
+              row.appendChild(equipBtn);
+            }
           }
         }
 
@@ -133,18 +146,20 @@ export class Inventory {
     // Equipment slots
     this.equipSection.innerHTML = '';
     let hasEquipped = false;
-    const rendered = new Set<string>(); // avoid showing two-handers twice
+    const twoHandRendered = new Set<string>();
 
     for (const slot of EQUIP_SLOTS) {
       const itemId = this.equipment[slot];
       if (!itemId) continue;
 
-      // Two-handed dedup
-      const key = `${itemId}`;
-      if (rendered.has(key) && (slot === 'wield_left' || slot === 'wield_right')) continue;
-      rendered.add(key);
-
       const def = ITEM_DEFS[itemId];
+
+      // Skip duplicate slot for two-handed weapons
+      if (def?.handedness === 'two_hand' && (slot === 'wield_left' || slot === 'wield_right')) {
+        if (twoHandRendered.has(itemId)) continue;
+        twoHandRendered.add(itemId);
+      }
+
       const name = def?.name ?? itemId;
       hasEquipped = true;
 

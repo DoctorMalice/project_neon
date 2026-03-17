@@ -67,9 +67,9 @@ interface ServerGroundItem {
 
 // Define where items spawn on the map
 const ITEM_SPAWN_DEFS: ItemSpawnDef[] = [
-  { itemType: 'Gold Pieces', x: 24, y: 24 },
-  { itemType: 'Gold Pieces', x: 30, y: 15 },
-  { itemType: 'Gold Pieces', x: 15, y: 35 },
+  { itemType: 'Wood Pieces', x: 24, y: 24 },
+  { itemType: 'Weapon Parts', x: 30, y: 15 },
+  { itemType: 'Wood Pieces', x: 15, y: 35 },
 ];
 
 const groundItems = new Map<string, ServerGroundItem>();

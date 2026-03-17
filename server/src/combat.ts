@@ -22,6 +22,8 @@ import {
   type PhysicalDamageType,
   type DamageType,
   type WeightedEntry,
+  type EnemyCombatFlags,
+  DEFAULT_ENEMY_COMBAT_FLAGS,
   type InventoryItem,
   type ServerMessage,
   type Equipment,
@@ -72,7 +74,7 @@ function clamp(min: number, max: number, value: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function makeParticipant(id: string, name: string, isEnemy: boolean, stats: CombatStats, equipment: Equipment = {}): CombatParticipant {
+function makeParticipant(id: string, name: string, isEnemy: boolean, stats: CombatStats, equipment: Equipment = {}, combatFlags?: Partial<EnemyCombatFlags>): CombatParticipant {
   return {
     id,
     name,
@@ -80,6 +82,7 @@ function makeParticipant(id: string, name: string, isEnemy: boolean, stats: Comb
     stats: { ...stats, damageTypeBonuses: { ...stats.damageTypeBonuses }, resistances: { ...stats.resistances }, immunities: [...stats.immunities] },
     alive: true,
     equipment,
+    combatFlags,
   };
 }
 
@@ -103,6 +106,13 @@ function resolveDamage(
 ): CombatLogEntry {
   const atkBonus = STRATEGY_BONUSES[attackerStrategy];
   const defBonus = STRATEGY_BONUSES[defenderStrategy];
+
+  // Resolve combat flags (enemies use flags, players default to full capabilities)
+  const atkFlags: EnemyCombatFlags = { ...DEFAULT_ENEMY_COMBAT_FLAGS, ...attacker.combatFlags };
+  const defFlags: EnemyCombatFlags = { ...DEFAULT_ENEMY_COMBAT_FLAGS, ...defender.combatFlags };
+  // Players always have full capabilities
+  if (!attacker.isEnemy) { atkFlags.canCrit = true; atkFlags.canDodge = true; atkFlags.canMiss = false; }
+  if (!defender.isEnemy) { defFlags.canCrit = true; defFlags.canDodge = true; defFlags.canMiss = true; }
 
   // Attacker offense: base stats + attacker strategy + equipment bonuses for this damage type
   const atkEquip = resolveEquipmentBonuses(attacker.equipment, damageType);
@@ -131,9 +141,30 @@ function resolveDamage(
     };
   }
 
-  // Step 2: Dodge check — chance = (basePercent + bonus / divisor) / 100
-  const dodgeChance = clamp(0, 1, (COMBAT_DODGE_BASE_PERCENT + effectiveDodge / COMBAT_BONUS_DIVISOR_CHANCE) / 100);
-  if (Math.random() < dodgeChance) {
+  // Step 2a: Miss check — attacker can miss (based on defender's dodge as hit avoidance)
+  if (atkFlags.canMiss) {
+    const missChance = clamp(0, 1, (COMBAT_DODGE_BASE_PERCENT + effectiveDodge / COMBAT_BONUS_DIVISOR_CHANCE) / 100);
+    if (Math.random() < missChance) {
+      return {
+        actor: attacker.name,
+        actorId: attacker.id,
+        target: defender.name,
+        targetId: defender.id,
+        damage: 0,
+        crit: false,
+        dodged: false,
+        defended: false,
+        immune: false,
+        message: `${attacker.name}'s attack misses ${defender.name}!`,
+      };
+    }
+  }
+
+  // Step 2b: Dodge check — chance = (basePercent + bonus / divisor) / 100
+  const dodgeChance = defFlags.canDodge
+    ? clamp(0, 1, (COMBAT_DODGE_BASE_PERCENT + effectiveDodge / COMBAT_BONUS_DIVISOR_CHANCE) / 100)
+    : 0;
+  if (dodgeChance > 0 && Math.random() < dodgeChance) {
     return {
       actor: attacker.name,
       actorId: attacker.id,
@@ -153,9 +184,11 @@ function resolveDamage(
   const minHit = clamp(1, maxHit, 1 + Math.floor(effectiveAccuracy / COMBAT_BONUS_DIVISOR_ACCURACY));
   let damage = minHit + Math.floor(Math.random() * (maxHit - minHit + 1));
 
-  // Step 4: Crit check
-  const critChance = clamp(0, 1, (COMBAT_CRIT_BASE_PERCENT + effectiveCrit / COMBAT_BONUS_DIVISOR_CHANCE) / 100);
-  const crit = Math.random() < critChance;
+  // Step 4: Crit check (only if attacker canCrit)
+  const critChance = atkFlags.canCrit
+    ? clamp(0, 1, (COMBAT_CRIT_BASE_PERCENT + effectiveCrit / COMBAT_BONUS_DIVISOR_CHANCE) / 100)
+    : 0;
+  const crit = critChance > 0 && Math.random() < critChance;
   if (crit) {
     damage = Math.floor(damage * COMBAT_CRIT_MULTIPLIER);
   }
@@ -446,6 +479,8 @@ export function createCombat(
     enemyDef.name,
     true,
     { ...enemyDef.baseStats, hp: enemyDef.baseStats.maxHp },
+    {},
+    enemyDef.combatFlags,
   );
 
   const state: CombatState = {

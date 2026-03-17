@@ -74,11 +74,24 @@ export interface DropTableEntry {
   maxQty: number;
 }
 
+export interface EnemyCombatFlags {
+  canCrit: boolean;
+  canDodge: boolean;
+  canMiss: boolean;
+}
+
+export const DEFAULT_ENEMY_COMBAT_FLAGS: EnemyCombatFlags = {
+  canCrit: false,
+  canDodge: false,
+  canMiss: true,
+};
+
 export interface EnemyDef {
   id: string;
   name: string;
   tier: number;
   baseStats: CombatStats;
+  combatFlags?: Partial<EnemyCombatFlags>;
   respawnMs: number;
   strategies: WeightedEntry<CombatStrategy>[];
   damageTypes: WeightedEntry<PhysicalDamageType>[];
@@ -122,6 +135,7 @@ export interface CombatParticipant {
   stats: CombatStats;
   alive: boolean;
   equipment: Equipment;
+  combatFlags?: Partial<EnemyCombatFlags>;
 }
 
 export interface CombatState {
