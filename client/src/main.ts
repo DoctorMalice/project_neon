@@ -74,7 +74,7 @@ const renderer = new Renderer();
 const chat = new Chat(network);
 const debug = new DebugOverlay(network);
 const contextMenu = new ContextMenu();
-const inventory = new Inventory();
+const inventory = new Inventory(network);
 const combatManager = new Combat(network);
 const characterPanel = new CharacterPanel(network);
 let characterState: CharacterSheet | null = null;
@@ -141,6 +141,7 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
     if (msg.type === 'CHARACTER_STATE') {
       characterState = msg.sheet;
       characterPanel.update(msg.sheet, msg.combatStats);
+      inventory.updateEquipment(msg.equipment);
       return;
     }
     if (msg.type === 'LEVEL_UP') {

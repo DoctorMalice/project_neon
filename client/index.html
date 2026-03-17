@@ -221,11 +221,27 @@
     .inventory-item {
       padding: 4px 0;
       color: #ddd; font-size: 13px;
+      display: flex; align-items: center; gap: 6px;
     }
+    .inventory-item span { flex: 1; }
     .inventory-empty {
       padding: 4px 0;
       color: #555; font-size: 13px;
       font-style: italic;
+    }
+    .inv-equip-btn {
+      padding: 2px 8px; font-size: 11px;
+      background: rgba(200, 184, 138, 0.1);
+      border: 1px solid rgba(200, 184, 138, 0.25);
+      border-radius: 4px; color: #c8b88a;
+      cursor: pointer; flex-shrink: 0;
+    }
+    .inv-equip-btn:hover {
+      background: rgba(200, 184, 138, 0.2);
+    }
+    .equip-slot-label {
+      color: #888; font-size: 11px; font-weight: 600;
+      min-width: 48px; flex: 0 !important;
     }
 
     .combat-label {

@@ -348,9 +348,12 @@ wss.on('connection', (ws) => {
         enemies: getActiveMapEnemies(combat.getCombatForEnemy),
       });
 
-      // Send initial empty inventory
-      inventories.set(id, []);
-      send(ws, { type: 'INVENTORY', items: [] });
+      // Send starter inventory
+      const starterItems = [
+        { itemType: 'Wood Knife', quantity: 1 },
+      ];
+      inventories.set(id, starterItems);
+      send(ws, { type: 'INVENTORY', items: starterItems });
 
       // Send chat history
       for (const chatMsg of chatHistory) {
