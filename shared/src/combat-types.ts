@@ -98,7 +98,9 @@ export interface CombatAction {
 
 export interface CombatLogEntry {
   actor: string;
+  actorId: string;
   target: string;
+  targetId: string;
   damage: number;
   crit: boolean;
   dodged: boolean;
@@ -126,6 +128,7 @@ export interface CombatState {
   allies: CombatParticipant[];
   enemies: CombatParticipant[];
   log: CombatLogEntry[];
+  preRoundHp: Record<string, number>;  // participant id -> hp before round resolution
   awaitingActionFrom: string[];
   turnDeadline: number;    // server timestamp (ms) when auto-defend kicks in
   readyPlayerIds: string[]; // players who have submitted their action this round

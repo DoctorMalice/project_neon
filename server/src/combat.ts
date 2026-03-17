@@ -102,7 +102,9 @@ function resolveDamage(
   if (defender.stats.immunities.includes(damageType)) {
     return {
       actor: attacker.name,
+      actorId: attacker.id,
       target: defender.name,
+      targetId: defender.id,
       damage: 0,
       crit: false,
       dodged: false,
@@ -117,7 +119,9 @@ function resolveDamage(
   if (Math.random() < dodgeChance) {
     return {
       actor: attacker.name,
+      actorId: attacker.id,
       target: defender.name,
+      targetId: defender.id,
       damage: 0,
       crit: false,
       dodged: true,
@@ -171,7 +175,9 @@ function resolveDamage(
 
   return {
     actor: attacker.name,
+    actorId: attacker.id,
     target: defender.name,
+    targetId: defender.id,
     damage,
     crit,
     dodged: false,
@@ -187,6 +193,13 @@ function resolveRound(combat: CombatInstance): void {
   combat.state.phase = 'resolving';
   combat.state.log = [];
 
+  // Snapshot HP before any damage is applied
+  const snapshot: Record<string, number> = {};
+  for (const p of [...combat.state.allies, ...combat.state.enemies]) {
+    snapshot[p.id] = p.stats.hp;
+  }
+  combat.state.preRoundHp = snapshot;
+
   const enemyDef = ENEMY_DEFS[combat.enemySpawn.defId];
 
   // Resolve flee attempts first (separate pass to avoid mutating allies during iteration)
@@ -198,14 +211,14 @@ function resolveRound(combat: CombatInstance): void {
 
     if (Math.random() < COMBAT_RUN_CHANCE) {
       combat.state.log.push({
-        actor: ally.name, target: '', damage: 0,
+        actor: ally.name, actorId: ally.id, target: '', targetId: '', damage: 0,
         crit: false, dodged: false, defended: false, immune: false,
         message: `${ally.name} fled from combat!`,
       });
       fleeingIds.push(ally.id);
     } else {
       combat.state.log.push({
-        actor: ally.name, target: '', damage: 0,
+        actor: ally.name, actorId: ally.id, target: '', targetId: '', damage: 0,
         crit: false, dodged: false, defended: false, immune: false,
         message: `${ally.name} failed to run away!`,
       });
@@ -280,7 +293,7 @@ function resolveRound(combat: CombatInstance): void {
       combat.state.log.push(entry);
     } else {
       combat.state.log.push({
-        actor: enemy.name, target: '', damage: 0,
+        actor: enemy.name, actorId: enemy.id, target: '', targetId: '', damage: 0,
         crit: false, dodged: false, defended: false, immune: false,
         message: `${enemy.name} takes a defensive stance.`,
       });
@@ -404,6 +417,7 @@ export function createCombat(
     allies: [allyParticipant],
     enemies: [enemyParticipant],
     log: [],
+    preRoundHp: {},
     awaitingActionFrom: [player.id],
     turnDeadline: Date.now() + COMBAT_ACTION_TIMEOUT_MS,
     readyPlayerIds: [],

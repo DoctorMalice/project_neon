@@ -458,7 +458,7 @@
 
     /* Combat log */
     #combat-log {
-      max-height: 100px; overflow-y: auto;
+      max-height: 150px; overflow-y: auto;
       padding: 8px 16px;
       margin: 16px;
       background: rgba(0,0,0,0.3);
@@ -471,6 +471,24 @@
     }
     .combat-log-entry.crit { color: #e8c040; font-weight: 600; }
     .combat-log-entry.dodged { color: #8aa8cc; font-style: italic; }
+    .combat-log-prompt { color: #c8b88a; font-style: italic; }
+    .combat-log-waiting { color: #888; font-style: italic; }
+
+    .combat-next-btn {
+      display: block;
+      margin: 8px auto 2px;
+      padding: 5px 24px;
+      font-size: 12px; font-weight: 600;
+      background: rgba(200, 184, 138, 0.15);
+      border: 1px solid rgba(200, 184, 138, 0.3);
+      border-radius: 5px;
+      color: #e8d8a8;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .combat-next-btn:hover {
+      background: rgba(200, 184, 138, 0.28);
+    }
 
     /* Controls */
     #combat-controls {

@@ -6,6 +6,8 @@ import {
   type CombatStrategy,
   type PhysicalDamageType,
   type CombatAction,
+  type CombatLogEntry,
+  type CombatParticipant,
   type InventoryItem,
 } from 'shared';
 
@@ -43,6 +45,16 @@ export class CombatUI {
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private turnDeadline = 0;
   private serverTimeOffset = 0;
+
+  // Playback state
+  private isInPlayback = false;
+  private playbackLog: CombatLogEntry[] = [];
+  private playbackIndex = 0;
+  private displayedHp: Record<string, number> = {};
+  private playbackState: CombatState | null = null;
+  private playbackPlayerId: string | null = null;
+  private onPlaybackComplete: (() => void) | null = null;
+  private shownLogEntries: CombatLogEntry[] = [];
 
   constructor() {
     this.overlay = document.createElement('div');
@@ -137,6 +149,7 @@ export class CombatUI {
       if (!this.actionsEnabled || !this.onAction) return;
       this.onAction({ type: 'attack', strategy: this.selectedStrategy, damageType: this.selectedDamageType });
       this.setActionsEnabled(false);
+      this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
     });
 
     const defendBtn = document.createElement('button');
@@ -146,6 +159,7 @@ export class CombatUI {
       if (!this.actionsEnabled || !this.onAction) return;
       this.onAction({ type: 'defend', strategy: this.selectedStrategy });
       this.setActionsEnabled(false);
+      this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
     });
 
     const runBtn = document.createElement('button');
@@ -155,6 +169,7 @@ export class CombatUI {
       if (!this.actionsEnabled || !this.onAction) return;
       this.onAction({ type: 'run', strategy: this.selectedStrategy });
       this.setActionsEnabled(false);
+      this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
     });
 
     actionRow.appendChild(attackBtn);
@@ -170,121 +185,156 @@ export class CombatUI {
     this.overlay.style.display = 'flex';
     this.resultSection.style.display = 'none';
     this.controlsSection.style.display = '';
+    this.isInPlayback = false;
     this.updateState(state, myPlayerId);
   }
 
   hide(): void {
     this.overlay.style.display = 'none';
     this.stopTimer();
+    this.isInPlayback = false;
   }
 
   get isVisible(): boolean {
     return this.overlay.style.display !== 'none';
   }
 
+  get inPlayback(): boolean {
+    return this.isInPlayback;
+  }
+
   setServerTimeOffset(offset: number): void {
     this.serverTimeOffset = offset;
   }
 
+  // Called for state updates that have no log (action phase updates, ready status changes)
   updateState(state: CombatState, myPlayerId: string): void {
+    if (this.isInPlayback) return; // don't clobber playback
+
     // Round label
     const roundLabel = this.overlay.querySelector('#combat-round-label')!;
-    roundLabel.textContent = `Combat — Round ${state.round}`;
+    roundLabel.textContent = `Combat \u2014 Round ${state.round}`;
 
     // Timer
     this.turnDeadline = state.turnDeadline;
     this.updateTimer();
     this.startTimer();
 
-    // Enemies
-    this.enemySection.innerHTML = state.enemies
-      .map(e => {
-        const pct = Math.max(0, e.stats.hp / e.stats.maxHp * 100);
-        return `<div class="combat-card enemy">
-          <div class="combat-card-name">${e.name}</div>
-          <div class="combat-card-bar-row">
-            <span class="combat-bar-label">HP</span>
-            <div class="combat-bar-container">
-              <div class="combat-bar hp" style="width:${pct}%"></div>
-            </div>
-            <span class="combat-bar-value">${e.stats.hp}/${e.stats.maxHp}</span>
-          </div>
-        </div>`;
-      })
-      .join('');
+    // Render participants with their actual server HP
+    this.renderParticipants(state, myPlayerId, null);
 
-    // Allies
-    this.allySection.innerHTML = state.allies
-      .map(a => {
-        const hpPct = Math.max(0, a.stats.hp / a.stats.maxHp * 100);
-        const isMe = a.id === myPlayerId;
-        let bars = `<div class="combat-card-bar-row">
-            <span class="combat-bar-label">HP</span>
-            <div class="combat-bar-container">
-              <div class="combat-bar hp" style="width:${hpPct}%"></div>
-            </div>
-            <span class="combat-bar-value">${a.stats.hp}/${a.stats.maxHp}</span>
-          </div>`;
-        if (a.stats.maxMp > 0) {
-          const mpPct = Math.max(0, a.stats.mp / a.stats.maxMp * 100);
-          bars += `<div class="combat-card-bar-row">
-            <span class="combat-bar-label">MP</span>
-            <div class="combat-bar-container mp-bar">
-              <div class="combat-bar mp" style="width:${mpPct}%"></div>
-            </div>
-            <span class="combat-bar-value">${a.stats.mp}/${a.stats.maxMp}</span>
-          </div>`;
-        }
-        if (a.stats.maxSp > 0) {
-          const spPct = Math.max(0, a.stats.sp / a.stats.maxSp * 100);
-          bars += `<div class="combat-card-bar-row">
-            <span class="combat-bar-label">SP</span>
-            <div class="combat-bar-container sp-bar">
-              <div class="combat-bar sp" style="width:${spPct}%"></div>
-            </div>
-            <span class="combat-bar-value">${a.stats.sp}/${a.stats.maxSp}</span>
-          </div>`;
-        }
-
-        // Ally status (only show for other allies during awaiting_action phase)
-        let statusHtml = '';
-        if (!isMe && a.alive && state.phase === 'awaiting_action') {
-          const isReady = state.readyPlayerIds.includes(a.id);
-          if (isReady) {
-            statusHtml = `<div class="combat-ally-status ready">Ready!</div>`;
-          } else {
-            statusHtml = `<div class="combat-ally-status deciding">Deciding next move...</div>`;
-          }
-        }
-
-        return `<div class="combat-card ally ${isMe ? 'me' : ''}">
-          <div class="combat-card-name">${a.name}${isMe ? ' (You)' : ''}</div>
-          ${bars}
-          ${statusHtml}
-        </div>`;
-      })
-      .join('');
-
-    // Log
-    if (state.log.length > 0) {
-      this.logSection.innerHTML = state.log
-        .map(entry => `<div class="combat-log-entry${entry.crit ? ' crit' : ''}${entry.dodged ? ' dodged' : ''}">${entry.message}</div>`)
-        .join('');
-      this.logSection.scrollTop = this.logSection.scrollHeight;
-    }
-
-    // Enable/disable actions
+    // Log — show prompt based on action state
     const awaiting = state.awaitingActionFrom.includes(myPlayerId);
-    this.setActionsEnabled(awaiting);
-
-    if (state.phase === 'awaiting_action' && !awaiting && state.awaitingActionFrom.length > 0) {
-      this.setStatusText('Waiting for allies...');
+    if (state.phase === 'awaiting_action') {
+      if (awaiting) {
+        this.logSection.innerHTML = `<div class="combat-log-entry combat-log-prompt">Choose an action...</div>`;
+      } else if (state.awaitingActionFrom.length > 0) {
+        this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
+      }
     }
+
+    // Show/hide controls
+    this.controlsSection.style.display = '';
+    this.resultSection.style.display = 'none';
+    this.setActionsEnabled(awaiting);
+  }
+
+  // Start playback of round results
+  startPlayback(state: CombatState, myPlayerId: string, onComplete: () => void): void {
+    this.isInPlayback = true;
+    this.playbackState = state;
+    this.playbackPlayerId = myPlayerId;
+    this.playbackLog = [...state.log];
+    this.playbackIndex = 0;
+    this.onPlaybackComplete = onComplete;
+    this.shownLogEntries = [];
+
+    // Initialize displayed HP from pre-round snapshot
+    this.displayedHp = { ...state.preRoundHp };
+
+    // Round label (show the round this log belongs to)
+    const roundLabel = this.overlay.querySelector('#combat-round-label')!;
+    roundLabel.textContent = `Combat \u2014 Round ${state.round}`;
+
+    // Hide timer during playback
+    this.stopTimer();
+    const timerEl = this.overlay.querySelector('#combat-timer')!;
+    timerEl.textContent = '';
+
+    // Hide action controls, show result section area for the Next button
+    this.controlsSection.style.display = 'none';
+    this.resultSection.style.display = 'none';
+
+    // Render participants with pre-round HP
+    this.renderParticipants(state, myPlayerId, this.displayedHp);
+
+    // Show first entry immediately
+    if (this.playbackLog.length > 0) {
+      this.advancePlayback();
+    } else {
+      // No log entries, just finish
+      this.finishPlayback();
+    }
+  }
+
+  private advancePlayback(): void {
+    if (!this.playbackState || !this.playbackPlayerId) return;
+
+    const entry = this.playbackLog[this.playbackIndex];
+    this.shownLogEntries.push(entry);
+
+    // Apply this entry's damage to displayedHp
+    if (entry.targetId && entry.damage > 0) {
+      if (this.displayedHp[entry.targetId] !== undefined) {
+        this.displayedHp[entry.targetId] = Math.max(0, this.displayedHp[entry.targetId] - entry.damage);
+      }
+    }
+
+    // Re-render participants with updated displayed HP
+    this.renderParticipants(this.playbackState, this.playbackPlayerId, this.displayedHp);
+
+    // Render shown log entries + Next button
+    this.renderPlaybackLog();
+  }
+
+  private renderPlaybackLog(): void {
+    let html = this.shownLogEntries
+      .map(entry => `<div class="combat-log-entry${entry.crit ? ' crit' : ''}${entry.dodged ? ' dodged' : ''}">${entry.message}</div>`)
+      .join('');
+
+    const hasMore = this.playbackIndex < this.playbackLog.length - 1;
+    if (hasMore) {
+      html += `<button id="combat-next-btn" class="combat-next-btn">Next</button>`;
+    } else {
+      html += `<button id="combat-next-btn" class="combat-next-btn">Continue</button>`;
+    }
+
+    this.logSection.innerHTML = html;
+    this.logSection.scrollTop = this.logSection.scrollHeight;
+
+    this.logSection.querySelector('#combat-next-btn')!.addEventListener('click', () => {
+      this.playbackIndex++;
+      if (this.playbackIndex < this.playbackLog.length) {
+        this.advancePlayback();
+      } else {
+        this.finishPlayback();
+      }
+    });
+  }
+
+  private finishPlayback(): void {
+    this.isInPlayback = false;
+    this.playbackState = null;
+    this.playbackPlayerId = null;
+    const cb = this.onPlaybackComplete;
+    this.onPlaybackComplete = null;
+    if (cb) cb();
   }
 
   showResult(result: 'victory' | 'defeat' | 'fled', xp: number, loot: InventoryItem[]): void {
     this.controlsSection.style.display = 'none';
     this.resultSection.style.display = '';
+    this.stopTimer();
 
     let html = `<div class="combat-result-title ${result}">${result === 'victory' ? 'Victory!' : result === 'defeat' ? 'Defeat!' : 'Fled!'}</div>`;
     if (result === 'victory') {
@@ -301,6 +351,93 @@ export class CombatUI {
     });
   }
 
+  // Unified participant renderer
+  // If overrideHp is provided, use those values instead of participant.stats.hp
+  private renderParticipants(
+    state: CombatState,
+    myPlayerId: string,
+    overrideHp: Record<string, number> | null,
+  ): void {
+    this.enemySection.innerHTML = state.enemies
+      .map(e => this.renderEnemyCard(e, overrideHp))
+      .join('');
+
+    this.allySection.innerHTML = state.allies
+      .map(a => this.renderAllyCard(a, myPlayerId, state, overrideHp))
+      .join('');
+  }
+
+  private renderEnemyCard(e: CombatParticipant, overrideHp: Record<string, number> | null): string {
+    const hp = overrideHp !== null ? (overrideHp[e.id] ?? e.stats.hp) : e.stats.hp;
+    const pct = Math.max(0, hp / e.stats.maxHp * 100);
+    return `<div class="combat-card enemy">
+      <div class="combat-card-name">${e.name}</div>
+      <div class="combat-card-bar-row">
+        <span class="combat-bar-label">HP</span>
+        <div class="combat-bar-container">
+          <div class="combat-bar hp" style="width:${pct}%"></div>
+        </div>
+        <span class="combat-bar-value">${hp}/${e.stats.maxHp}</span>
+      </div>
+    </div>`;
+  }
+
+  private renderAllyCard(
+    a: CombatParticipant,
+    myPlayerId: string,
+    state: CombatState,
+    overrideHp: Record<string, number> | null,
+  ): string {
+    const hp = overrideHp !== null ? (overrideHp[a.id] ?? a.stats.hp) : a.stats.hp;
+    const hpPct = Math.max(0, hp / a.stats.maxHp * 100);
+    const isMe = a.id === myPlayerId;
+
+    let bars = `<div class="combat-card-bar-row">
+        <span class="combat-bar-label">HP</span>
+        <div class="combat-bar-container">
+          <div class="combat-bar hp" style="width:${hpPct}%"></div>
+        </div>
+        <span class="combat-bar-value">${hp}/${a.stats.maxHp}</span>
+      </div>`;
+    if (a.stats.maxMp > 0) {
+      const mpPct = Math.max(0, a.stats.mp / a.stats.maxMp * 100);
+      bars += `<div class="combat-card-bar-row">
+        <span class="combat-bar-label">MP</span>
+        <div class="combat-bar-container mp-bar">
+          <div class="combat-bar mp" style="width:${mpPct}%"></div>
+        </div>
+        <span class="combat-bar-value">${a.stats.mp}/${a.stats.maxMp}</span>
+      </div>`;
+    }
+    if (a.stats.maxSp > 0) {
+      const spPct = Math.max(0, a.stats.sp / a.stats.maxSp * 100);
+      bars += `<div class="combat-card-bar-row">
+        <span class="combat-bar-label">SP</span>
+        <div class="combat-bar-container sp-bar">
+          <div class="combat-bar sp" style="width:${spPct}%"></div>
+        </div>
+        <span class="combat-bar-value">${a.stats.sp}/${a.stats.maxSp}</span>
+      </div>`;
+    }
+
+    // Ally status (only during awaiting_action, not during playback)
+    let statusHtml = '';
+    if (!this.isInPlayback && !isMe && a.alive && state.phase === 'awaiting_action') {
+      const isReady = state.readyPlayerIds.includes(a.id);
+      if (isReady) {
+        statusHtml = `<div class="combat-ally-status ready">Ready!</div>`;
+      } else {
+        statusHtml = `<div class="combat-ally-status deciding">Deciding next move...</div>`;
+      }
+    }
+
+    return `<div class="combat-card ally ${isMe ? 'me' : ''}">
+      <div class="combat-card-name">${a.name}${isMe ? ' (You)' : ''}</div>
+      ${bars}
+      ${statusHtml}
+    </div>`;
+  }
+
   private setActionsEnabled(enabled: boolean): void {
     this.actionsEnabled = enabled;
     const btns = this.controlsSection.querySelectorAll('.combat-action-btn');
@@ -308,15 +445,6 @@ export class CombatUI {
       (btn as HTMLButtonElement).disabled = !enabled;
       btn.classList.toggle('disabled', !enabled);
     });
-  }
-
-  private setStatusText(text: string): void {
-    const existing = this.controlsSection.querySelector('.combat-status');
-    if (existing) existing.remove();
-    const el = document.createElement('div');
-    el.className = 'combat-status';
-    el.textContent = text;
-    this.controlsSection.appendChild(el);
   }
 
   private startTimer(): void {
@@ -333,20 +461,13 @@ export class CombatUI {
 
   private updateTimer(): void {
     const timerEl = this.overlay.querySelector('#combat-timer')!;
-    if (!this.turnDeadline) {
+    if (!this.turnDeadline || this.isInPlayback) {
       timerEl.textContent = '';
       return;
     }
     const now = Date.now() + this.serverTimeOffset;
     const remaining = Math.max(0, Math.ceil((this.turnDeadline - now) / 1000));
-    const total = Math.ceil(COMBAT_ACTION_TIMEOUT_MS / 1000);
     timerEl.textContent = `${remaining}s`;
     timerEl.classList.toggle('combat-timer-urgent', remaining <= 5);
-
-    // Update the timer bar width
-    const barEl = this.overlay.querySelector('#combat-timer-bar') as HTMLElement | null;
-    if (barEl) {
-      barEl.style.width = `${Math.max(0, (remaining / total) * 100)}%`;
-    }
   }
 }
