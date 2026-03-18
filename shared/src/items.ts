@@ -73,9 +73,9 @@ export const ITEM_DEFS: Record<string, ItemDef> = {
     combatBonus: emptyBonus(),
     combatPenalty: emptyBonus(),
   },
-  wood_knife: {
-    id: 'wood_knife',
-    name: 'Wood Knife',
+  wood_dagger: {
+    id: 'wood_dagger',
+    name: 'Wood Dagger',
     description: 'Standard wooden dagger; doubles as a utility knife',
     itemType: 'weapon',
     equipSlots: ['wield_left', 'wield_right'],
@@ -85,7 +85,7 @@ export const ITEM_DEFS: Record<string, ItemDef> = {
     damageTypes: ['slicing', 'piercing'],
     combatBonus: {
       accuracy: { slicing: 1, piercing: 1 },
-      power: { piercing: 1 },
+      power: { slicing: 10, piercing: 10 },
       dodge: { slicing: 1, piercing: 1, bludgeoning: 1, crushing: 1, chopping: 1 },
       defense: {},
     },

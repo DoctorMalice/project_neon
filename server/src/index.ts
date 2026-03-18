@@ -396,7 +396,7 @@ wss.on('connection', (ws) => {
 
       // Send starter inventory
       const starterItems = [
-        { itemType: 'Wood Knife', quantity: 1 },
+        { itemType: 'Wood Dagger', quantity: 1 },
       ];
       inventories.set(id, starterItems);
       send(ws, { type: 'INVENTORY', items: starterItems });

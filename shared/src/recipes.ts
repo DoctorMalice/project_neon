@@ -11,15 +11,15 @@ export interface Recipe {
 }
 
 export const RECIPES: Record<string, Recipe> = {
-  wood_knife: {
-    id: 'wood_knife',
-    name: 'Wood Knife',
+  wood_dagger: {
+    id: 'wood_dagger',
+    name: 'Wood Dagger',
     inputs: [
       { itemName: 'Wood Pieces', quantity: 5 },
       { itemName: 'Weapon Parts', quantity: 2 },
     ],
     outputs: [
-      { itemName: 'Wood Knife', quantity: 1 },
+      { itemName: 'Wood Dagger', quantity: 1 },
     ],
   },
 };
