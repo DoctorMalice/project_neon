@@ -241,9 +241,13 @@ export class CombatUI {
     this.renderParticipants(state, myPlayerId, null);
 
     // Log — show prompt based on action state
+    const myAlly = state.allies.find(a => a.id === myPlayerId);
+    const amDead = myAlly ? !myAlly.alive : false;
     const awaiting = state.awaitingActionFrom.includes(myPlayerId);
     if (state.phase === 'awaiting_action') {
-      if (awaiting) {
+      if (amDead) {
+        this.logSection.innerHTML = `<div class="combat-log-entry combat-log-incapacitated">You are incapacitated!</div>`;
+      } else if (awaiting) {
         this.logSection.innerHTML = `<div class="combat-log-entry combat-log-prompt">Choose an action...</div>`;
       } else if (state.awaitingActionFrom.length > 0) {
         this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
@@ -251,7 +255,7 @@ export class CombatUI {
     }
 
     // Show/hide controls
-    this.controlsSection.style.display = '';
+    this.controlsSection.style.display = amDead ? 'none' : '';
     this.resultSection.style.display = 'none';
     this.setActionsEnabled(awaiting);
   }
@@ -438,12 +442,16 @@ export class CombatUI {
 
     // Ally status (only during awaiting_action, not during playback)
     let statusHtml = '';
-    if (!this.isInPlayback && !isMe && a.alive && state.phase === 'awaiting_action') {
-      const isReady = state.readyPlayerIds.includes(a.id);
-      if (isReady) {
-        statusHtml = `<div class="combat-ally-status ready">Ready!</div>`;
+    if (!this.isInPlayback && !isMe && state.phase === 'awaiting_action') {
+      if (!a.alive) {
+        statusHtml = `<div class="combat-ally-status incapacitated">Incapacitated!</div>`;
       } else {
-        statusHtml = `<div class="combat-ally-status deciding">Deciding next move...</div>`;
+        const isReady = state.readyPlayerIds.includes(a.id);
+        if (isReady) {
+          statusHtml = `<div class="combat-ally-status ready">Ready!</div>`;
+        } else {
+          statusHtml = `<div class="combat-ally-status deciding">Deciding next move...</div>`;
+        }
       }
     }
 

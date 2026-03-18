@@ -132,12 +132,36 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
   // Write back final HP/MP/SP from combat to each player's character
   for (const [playerId, finalStats] of allyFinalStats) {
     const character = characters.get(playerId);
-    if (character) {
-      character.combatStats.hp = finalStats.hp;
-      character.combatStats.mp = finalStats.mp;
-      character.combatStats.sp = finalStats.sp;
-      character.combatStats.ep = finalStats.ep;
-      character.combatStats.kp = finalStats.kp;
+    const p = players.get(playerId);
+    if (!character) continue;
+
+    character.combatStats.hp = finalStats.hp;
+    character.combatStats.mp = finalStats.mp;
+    character.combatStats.sp = finalStats.sp;
+    character.combatStats.ep = finalStats.ep;
+    character.combatStats.kp = finalStats.kp;
+
+    // Defeated players respawn at map center with full stats
+    if (finalStats.hp <= 0 && p) {
+      const spawnPos = findSpawnPoint();
+      p.position = { x: spawnPos.x, y: spawnPos.y };
+      p.path = [];
+      p.pathIndex = 0;
+
+      // Restore all resources to max
+      character.combatStats.hp = character.combatStats.maxHp;
+      character.combatStats.mp = character.combatStats.maxMp;
+      character.combatStats.sp = character.combatStats.maxSp;
+      character.combatStats.ep = character.combatStats.maxEp;
+      character.combatStats.kp = character.combatStats.maxKp;
+
+      send(p.ws, {
+        type: 'CHARACTER_STATE',
+        sheet: character.sheet,
+        combatStats: character.combatStats,
+        equipment: character.equipment,
+      });
+      savePlayerState(playerId);
     }
   }
 
