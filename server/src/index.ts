@@ -23,7 +23,7 @@ import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from '.
 import * as combat from './combat';
 import { createCharacter, addXP, allocateAttributes, equipItem, unequipSlot, type ServerCharacter } from './player-state';
 import { type EquipSlot, EQUIP_SLOTS, ITEM_DEFS, getEquippedWeaponDamageTypes, RECIPES, canCraft } from 'shared';
-import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, deriveCombatStats } from 'shared';
+import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, type CombatStats, deriveCombatStats } from 'shared';
 import * as persistence from './persistence';
 
 // ---- State ----
@@ -118,16 +118,29 @@ function savePlayerState(playerId: string): void {
   if (!token || !character || !player) return;
   const inv = inventories.get(playerId) ?? [];
   const pos = { x: Math.round(player.position.x), y: Math.round(player.position.y) };
-  persistence.savePlayer(token, player.displayName, character.sheet, inv, character.equipment, pos);
+  persistence.savePlayer(token, player.displayName, character.sheet, character.combatStats, inv, character.equipment, pos);
 }
 
-function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>): void {
+function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>, allyFinalStats: Map<string, CombatStats>): void {
   // Remove all players from combat tracking
   for (const [playerId, cid] of playerCombats) {
     if (cid === combatId) {
       playerCombats.delete(playerId);
     }
   }
+
+  // Write back final HP/MP/SP from combat to each player's character
+  for (const [playerId, finalStats] of allyFinalStats) {
+    const character = characters.get(playerId);
+    if (character) {
+      character.combatStats.hp = finalStats.hp;
+      character.combatStats.mp = finalStats.mp;
+      character.combatStats.sp = finalStats.sp;
+      character.combatStats.ep = finalStats.ep;
+      character.combatStats.kp = finalStats.kp;
+    }
+  }
+
   // Award loot and XP to winners
   for (const [playerId, reward] of winners) {
     for (const item of reward.loot) {
@@ -249,9 +262,18 @@ wss.on('connection', (ws) => {
       players.set(id, player);
 
       // Restore character from saved data
+      const freshStats = deriveCombatStats(saved.sheet);
       const character: ServerCharacter = {
         sheet: saved.sheet,
-        combatStats: deriveCombatStats(saved.sheet),
+        combatStats: saved.combatStats ? {
+          ...freshStats,
+          // Restore current resource pools from saved data, clamped to current max
+          hp: Math.min(saved.combatStats.hp ?? freshStats.maxHp, freshStats.maxHp),
+          mp: Math.min(saved.combatStats.mp ?? freshStats.maxMp, freshStats.maxMp),
+          sp: Math.min(saved.combatStats.sp ?? freshStats.maxSp, freshStats.maxSp),
+          ep: Math.min(saved.combatStats.ep ?? freshStats.maxEp, freshStats.maxEp),
+          kp: Math.min(saved.combatStats.kp ?? freshStats.maxKp, freshStats.maxKp),
+        } : freshStats,
         equipment: saved.equipment ?? {},
       };
       characters.set(id, character);
@@ -549,9 +571,9 @@ wss.on('connection', (ws) => {
       const dy = Math.abs(player.position.y - spawn.y);
       if (dx > COMBAT_ENGAGE_RANGE || dy > COMBAT_ENGAGE_RANGE) return;
 
-      // Get player's combat stats and equipment
+      // Get player's current combat stats and equipment (preserves current HP)
       const charForAttack = characters.get(player.id);
-      const attackStats = charForAttack ? deriveCombatStats(charForAttack.sheet) : undefined;
+      const attackStats = charForAttack?.combatStats;
       const attackEquipment = charForAttack?.equipment ?? {};
 
       // Check if enemy is already in combat (co-op join)
@@ -611,7 +633,7 @@ wss.on('connection', (ws) => {
         if (dx > COMBAT_ENGAGE_RANGE || dy > COMBAT_ENGAGE_RANGE) return;
       }
       const charForJoin = characters.get(player.id);
-      const joinStats = charForJoin ? deriveCombatStats(charForJoin.sheet) : undefined;
+      const joinStats = charForJoin?.combatStats;
       const joinEquipment = charForJoin?.equipment ?? {};
       const joined = combat.joinCombat(
         { id: player.id, displayName: player.displayName, ws: player.ws },

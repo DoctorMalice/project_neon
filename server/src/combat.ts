@@ -48,7 +48,7 @@ interface CombatInstance {
   players: Map<string, PlayerHandle>;
   actionTimeout: ReturnType<typeof setTimeout> | null;
   autoDefendedPlayerIds: Set<string>;
-  onEnd: (combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>) => void;
+  onEnd: (combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>, allyFinalStats: Map<string, CombatStats>) => void;
   onEnemyDied: (spawn: ServerEnemySpawn) => void;
   onPlayerFled: (playerId: string) => void;
 }
@@ -431,7 +431,13 @@ function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'
     });
   }
 
-  combat.onEnd(combat.id, winners);
+  // Collect final stats for all allies (including dead ones)
+  const allyFinalStats = new Map<string, CombatStats>();
+  for (const ally of combat.state.allies) {
+    allyFinalStats.set(ally.id, ally.stats);
+  }
+
+  combat.onEnd(combat.id, winners, allyFinalStats);
   combats.delete(combat.id);
 }
 

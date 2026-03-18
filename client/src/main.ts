@@ -18,6 +18,7 @@ import { Inventory } from './inventory';
 import { Combat } from './combat';
 import { CharacterCreate } from './character-create';
 import { CharacterPanel } from './character-panel';
+import { PlayerHud } from './player-hud';
 
 // ---- State ----
 let myPlayerId: string | null = null;
@@ -77,6 +78,7 @@ const contextMenu = new ContextMenu();
 const inventory = new Inventory(network);
 const combatManager = new Combat(network);
 const characterPanel = new CharacterPanel(network);
+const playerHud = new PlayerHud();
 let characterState: CharacterSheet | null = null;
 
 const STORAGE_KEY = 'project_neon_session';
@@ -141,6 +143,7 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
     if (msg.type === 'CHARACTER_STATE') {
       characterState = msg.sheet;
       characterPanel.update(msg.sheet, msg.combatStats);
+      playerHud.update(msg.sheet, msg.combatStats);
       inventory.updateEquipment(msg.equipment);
       combatManager.setEquipment(msg.equipment);
       return;

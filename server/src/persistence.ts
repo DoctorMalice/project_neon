@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import type { CharacterSheet, Position, Equipment } from 'shared';
+import type { CharacterSheet, Position, Equipment, CombatStats } from 'shared';
 import type { InventoryItem } from 'shared';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -11,6 +11,7 @@ export interface SavedPlayer {
   token: string;
   displayName: string;
   sheet: CharacterSheet;
+  combatStats?: CombatStats;
   inventory: InventoryItem[];
   equipment: Equipment;
   position: Position;
@@ -47,11 +48,12 @@ export function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-export function savePlayer(token: string, displayName: string, sheet: CharacterSheet, inventory: InventoryItem[], equipment: Equipment, position: Position): void {
+export function savePlayer(token: string, displayName: string, sheet: CharacterSheet, combatStats: CombatStats, inventory: InventoryItem[], equipment: Equipment, position: Position): void {
   db[token] = {
     token,
     displayName,
     sheet,
+    combatStats,
     inventory,
     equipment,
     position,

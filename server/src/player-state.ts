@@ -107,7 +107,7 @@ export function addXP(character: ServerCharacter, amount: number): LevelUpResult
   }
 
   character.sheet.level = newLevel;
-  character.combatStats = deriveCombatStats(character.sheet);
+  refreshCombatStats(character);
 
   return { leveled: true, oldLevel, newLevel, growthIncreases };
 }
@@ -131,8 +131,23 @@ export function allocateAttributes(character: ServerCharacter, changes: Partial<
     }
   }
 
-  character.combatStats = deriveCombatStats(character.sheet);
+  refreshCombatStats(character);
   return true;
+}
+
+/** Recalculate max values from attributes but preserve current resource pools (clamped to new max) */
+export function refreshCombatStats(character: ServerCharacter): void {
+  const fresh = deriveCombatStats(character.sheet);
+  const old = character.combatStats;
+
+  // Preserve current resource values, clamped to new max
+  fresh.hp = old ? Math.min(old.hp, fresh.maxHp) : fresh.maxHp;
+  fresh.mp = old ? Math.min(old.mp, fresh.maxMp) : fresh.maxMp;
+  fresh.sp = old ? Math.min(old.sp, fresh.maxSp) : fresh.maxSp;
+  fresh.ep = old ? Math.min(old.ep, fresh.maxEp) : fresh.maxEp;
+  fresh.kp = old ? Math.min(old.kp, fresh.maxKp) : fresh.maxKp;
+
+  character.combatStats = fresh;
 }
 
 // ---- Equipment ----
@@ -184,7 +199,7 @@ export function equipItem(
     inventory.splice(idx, 1);
   }
 
-  character.combatStats = deriveCombatStats(character.sheet);
+  refreshCombatStats(character);
   return true;
 }
 
@@ -217,6 +232,6 @@ export function unequipSlot(
     inventory.push({ itemType: def.name, quantity: 1 });
   }
 
-  character.combatStats = deriveCombatStats(character.sheet);
+  refreshCombatStats(character);
   return true;
 }
