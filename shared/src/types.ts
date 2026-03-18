@@ -162,6 +162,11 @@ export interface ServerReconnectFailedMessage {
   type: 'RECONNECT_FAILED';
 }
 
+export interface ServerNameTakenMessage {
+  type: 'NAME_TAKEN';
+  reason: string;
+}
+
 export interface ServerAlreadyConnectedMessage {
   type: 'ALREADY_CONNECTED';
   reason: string;
@@ -228,4 +233,5 @@ export type ServerMessage =
   | ServerCharacterStateMessage
   | ServerLevelUpMessage
   | ServerReconnectFailedMessage
-  | ServerAlreadyConnectedMessage;
+  | ServerAlreadyConnectedMessage
+  | ServerNameTakenMessage;

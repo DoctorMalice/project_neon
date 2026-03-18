@@ -66,6 +66,11 @@ export function getPlayer(token: string): SavedPlayer | null {
   return db[token] ?? null;
 }
 
+export function isNameTaken(displayName: string): boolean {
+  const lower = displayName.toLowerCase();
+  return Object.values(db).some(p => p.displayName.toLowerCase() === lower);
+}
+
 export function deletePlayer(token: string): void {
   delete db[token];
   writeToDisk();

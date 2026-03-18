@@ -4,6 +4,7 @@
   "description": "Multiplayer browser-based MMO-style game",
   "private": true,
   "scripts": {
+    "dev": "pnpm --filter shared build && pnpm -r --parallel dev",
     "dev:server": "pnpm --filter server dev",
     "dev:client": "pnpm --filter client dev",
     "build": "pnpm --filter shared build && pnpm --filter server build && pnpm --filter client build"

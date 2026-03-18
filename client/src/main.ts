@@ -139,6 +139,13 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
       return;
     }
 
+    // Handle name taken
+    if (msg.type === 'NAME_TAKEN') {
+      alert(msg.reason);
+      showCharacterCreate();
+      return;
+    }
+
     // Handle character messages
     if (msg.type === 'CHARACTER_STATE') {
       characterState = msg.sheet;

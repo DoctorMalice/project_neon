@@ -330,6 +330,21 @@ wss.on('connection', (ws) => {
         .trim()
         .slice(0, MAX_DISPLAY_NAME_LENGTH) || 'Anon';
 
+      // Check if name is taken by an active player
+      const nameLower = displayName.toLowerCase();
+      for (const p of players.values()) {
+        if (p.displayName.toLowerCase() === nameLower) {
+          send(ws, { type: 'NAME_TAKEN', reason: 'That name is already in use' });
+          return;
+        }
+      }
+
+      // Check if name is taken by a saved player
+      if (persistence.isNameTaken(displayName)) {
+        send(ws, { type: 'NAME_TAKEN', reason: 'That name is already in use' });
+        return;
+      }
+
       const id = String(nextPlayerId++);
       const token = persistence.generateToken();
 
