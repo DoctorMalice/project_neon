@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, RenderTexture, Sprite } from 'pixi.js';
 import { TileType, TILE_SIZE, type Position, type GroundItem, type MapEnemy } from 'shared';
 
 // Tile colors
@@ -16,10 +16,10 @@ const GOLD_COLOR = 0xffd700;
 const ENEMY_COLOR = 0xff3333;
 
 // Zoom
-const MIN_ZOOM = 1.0; // current default = max zoom out
-const MAX_ZOOM = 3.0; // 3x zoom in
+const MIN_ZOOM = 1.0;
+const MAX_ZOOM = 3.0;
 const ZOOM_STEP = 0.15;
-const ZOOM_LERP_SPEED = 0.15; // smoothing factor per frame
+const ZOOM_LERP_SPEED = 0.15;
 
 interface RenderPlayer {
   id: string;
@@ -32,13 +32,15 @@ interface RenderPlayer {
 export class Renderer {
   private app: Application;
   private worldContainer: Container;
-  private tileGraphics: Graphics;
+  private mapSprite: Sprite | null = null;
+  private mapTexture: RenderTexture | null = null;
   private itemGraphics: Graphics;
   private enemyGraphics: Graphics;
   private playerGraphics: Graphics;
   private pathGraphics: Graphics;
 
   private map: TileType[][] = [];
+  private mapDirty = false;
   private camera: Position = { x: 0, y: 0 };
   private players: RenderPlayer[] = [];
   private groundItems: GroundItem[] = [];
@@ -60,7 +62,6 @@ export class Renderer {
   constructor() {
     this.app = new Application();
     this.worldContainer = new Container();
-    this.tileGraphics = new Graphics();
     this.itemGraphics = new Graphics();
     this.enemyGraphics = new Graphics();
     this.playerGraphics = new Graphics();
@@ -77,7 +78,6 @@ export class Renderer {
 
     document.getElementById('game-container')!.prepend(this.app.canvas);
 
-    this.worldContainer.addChild(this.tileGraphics);
     this.worldContainer.addChild(this.itemGraphics);
     this.worldContainer.addChild(this.enemyGraphics);
     this.worldContainer.addChild(this.pathGraphics);
@@ -160,6 +160,7 @@ export class Renderer {
 
   setMap(tiles: TileType[][]) {
     this.map = tiles;
+    this.mapDirty = true;
   }
 
   setCamera(pos: Position) {
@@ -229,6 +230,46 @@ export class Renderer {
     return { x: Math.floor(wx), y: Math.floor(wy) };
   }
 
+  /** Build (or rebuild) the static map texture — called once when map data arrives */
+  private buildMapTexture(): void {
+    if (this.map.length === 0) return;
+
+    const mapH = this.map.length;
+    const mapW = this.map[0].length;
+    const ts = TILE_SIZE; // base tile size (unzoomed)
+
+    // Destroy old texture/sprite
+    if (this.mapTexture) {
+      this.mapTexture.destroy(true);
+      this.mapTexture = null;
+    }
+    if (this.mapSprite) {
+      this.mapSprite.destroy();
+      this.mapSprite = null;
+    }
+
+    const g = new Graphics();
+    for (let y = 0; y < mapH; y++) {
+      for (let x = 0; x < mapW; x++) {
+        const tile = this.map[y][x];
+        const px = x * ts;
+        const py = y * ts;
+        g.rect(px, py, ts, ts);
+        g.fill(TILE_COLORS[tile]);
+        g.rect(px, py, ts, ts);
+        g.stroke({ width: 1, color: 0x000000, alpha: 0.15 });
+      }
+    }
+
+    this.mapTexture = RenderTexture.create({ width: mapW * ts, height: mapH * ts });
+    this.app.renderer.render({ container: g, target: this.mapTexture });
+    g.destroy();
+
+    this.mapSprite = new Sprite(this.mapTexture);
+    this.worldContainer.addChildAt(this.mapSprite, 0);
+    this.mapDirty = false;
+  }
+
   render() {
     // Smooth zoom interpolation
     this.zoom += (this.targetZoom - this.zoom) * ZOOM_LERP_SPEED;
@@ -238,37 +279,26 @@ export class Renderer {
     const screenH = this.app.screen.height;
     const ts = this.tileSize;
 
-    // Calculate visible tile range (viewport culling)
-    const tilesX = Math.ceil(screenW / ts) + 2;
-    const tilesY = Math.ceil(screenH / ts) + 2;
-    const startX = Math.floor(this.camera.x - tilesX / 2);
-    const startY = Math.floor(this.camera.y - tilesY / 2);
-    const endX = startX + tilesX;
-    const endY = startY + tilesY;
+    // Build map texture if needed
+    if (this.mapDirty) {
+      this.buildMapTexture();
+    }
 
-    // ---- Draw tiles ----
-    this.tileGraphics.clear();
-    for (let y = startY; y <= endY; y++) {
-      for (let x = startX; x <= endX; x++) {
-        if (y < 0 || y >= this.map.length || x < 0 || x >= this.map[0].length) continue;
-        const tile = this.map[y][x];
-        const { sx, sy } = this.worldToScreen(x, y);
-        this.tileGraphics.rect(sx, sy, ts, ts);
-        this.tileGraphics.fill(TILE_COLORS[tile]);
-        // Grid lines
-        this.tileGraphics.rect(sx, sy, ts, ts);
-        this.tileGraphics.stroke({ width: 1, color: 0x000000, alpha: 0.15 });
-      }
+    // Position the map sprite based on camera and zoom
+    if (this.mapSprite) {
+      this.mapSprite.scale.set(this.zoom, this.zoom);
+      this.mapSprite.x = -this.camera.x * ts + screenW / 2;
+      this.mapSprite.y = -this.camera.y * ts + screenH / 2;
     }
 
     // ---- Draw ground items ----
     this.itemGraphics.clear();
     for (const item of this.groundItems) {
       const { sx, sy } = this.worldToScreen(item.x, item.y);
+      if (sx + ts < 0 || sx > screenW || sy + ts < 0 || sy > screenH) continue;
       const cx = sx + ts / 2;
       const cy = sy + ts / 2;
       const size = ts * 0.25;
-      // Gold coin — small diamond/square rotated 45deg
       this.itemGraphics.moveTo(cx, cy - size);
       this.itemGraphics.lineTo(cx + size, cy);
       this.itemGraphics.lineTo(cx, cy + size);
@@ -287,10 +317,10 @@ export class Renderer {
     this.enemyGraphics.clear();
     for (const enemy of this.mapEnemies) {
       const { sx, sy } = this.worldToScreen(enemy.x, enemy.y);
+      if (sx + ts < 0 || sx > screenW || sy + ts < 0 || sy > screenH) continue;
       const cx = sx + ts / 2;
       const cy = sy + ts / 2;
       const size = ts * 0.3;
-      // Red triangle pointing up
       this.enemyGraphics.moveTo(cx, cy - size);
       this.enemyGraphics.lineTo(cx + size, cy + size * 0.7);
       this.enemyGraphics.lineTo(cx - size, cy + size * 0.7);
@@ -307,6 +337,7 @@ export class Renderer {
     this.pathGraphics.clear();
     for (const pos of this.pathPreview) {
       const { sx, sy } = this.worldToScreen(pos.x, pos.y);
+      if (sx + ts < 0 || sx > screenW || sy + ts < 0 || sy > screenH) continue;
       this.pathGraphics.rect(sx + ts * 0.3, sy + ts * 0.3, ts * 0.4, ts * 0.4);
       this.pathGraphics.fill({ color: PATH_PREVIEW_COLOR, alpha: 0.25 });
     }
