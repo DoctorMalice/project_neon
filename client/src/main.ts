@@ -108,10 +108,7 @@ function clearSession(): void {
 
 async function start(mode: { type: 'create'; displayName: string; race: string; class: string; initialAttributes: Record<string, number> } | { type: 'reconnect'; token: string }) {
   await renderer.init();
-
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const wsHost = window.location.hostname || 'localhost';
-  await network.connect(`${wsProtocol}://${wsHost}:3001`);
+  await network.connect(getWsUrl());
 
   if (mode.type === 'reconnect') {
     network.send({ type: 'RECONNECT', token: mode.token } as any);
@@ -139,7 +136,7 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
       return;
     }
 
-    // Handle name taken
+    // Handle name taken (safety net — normally caught during character creation)
     if (msg.type === 'NAME_TAKEN') {
       alert(msg.reason);
       showCharacterCreate();
@@ -674,10 +671,18 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
 // ---- Join screen with character creation ----
 const joinScreen = document.getElementById('join-screen')!;
 
-function showCharacterCreate(): void {
+function getWsUrl(): string {
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsHost = window.location.hostname || 'localhost';
+  return `${wsProtocol}://${wsHost}:3001`;
+}
+
+async function showCharacterCreate(): Promise<void> {
   joinScreen.style.display = '';
   document.getElementById('game-container')!.classList.add('setup-active');
-  const charCreate = new CharacterCreate(joinScreen);
+  // Connect early so name checks work during character creation
+  await network.connect(getWsUrl());
+  const charCreate = new CharacterCreate(joinScreen, network);
   charCreate.setOnComplete((result) => {
     joinScreen.style.display = 'none';
     document.getElementById('game-container')!.classList.remove('setup-active');

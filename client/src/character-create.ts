@@ -3,6 +3,7 @@ import {
   STARTING_ATTRIBUTE_POINTS, computeBaseAttributes,
   type RaceId, type ClassId, type Attributes, type AttributeKey,
 } from 'shared';
+import type { Network } from './network';
 
 export interface CharacterCreateResult {
   displayName: string;
@@ -47,6 +48,7 @@ const ALLOCATABLE_KEYS: AttributeKey[] = [
 
 export class CharacterCreate {
   private container: HTMLElement;
+  private network: Network;
   private onComplete: ((result: CharacterCreateResult) => void) | null = null;
 
   private step: 'name' | 'race' | 'class' | 'attributes' = 'name';
@@ -55,9 +57,11 @@ export class CharacterCreate {
   private selectedClass: ClassId | null = null;
   private allocated: Partial<Record<AttributeKey, number>> = {};
   private pointsRemaining = STARTING_ATTRIBUTE_POINTS;
+  private nameCheckCleanup: (() => void) | null = null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, network: Network) {
     this.container = container;
+    this.network = network;
     this.render();
   }
 
@@ -66,6 +70,11 @@ export class CharacterCreate {
   }
 
   private render(): void {
+    // Clean up name check listener when leaving the name step
+    if (this.step !== 'name' && this.nameCheckCleanup) {
+      this.nameCheckCleanup();
+      this.nameCheckCleanup = null;
+    }
     switch (this.step) {
       case 'name': return this.renderName();
       case 'race': return this.renderRace();
@@ -75,19 +84,49 @@ export class CharacterCreate {
   }
 
   private renderName(): void {
+    // Clean up any previous name check listener
+    if (this.nameCheckCleanup) { this.nameCheckCleanup(); this.nameCheckCleanup = null; }
+
     this.container.innerHTML = `
       <h1>Project Neon</h1>
       <input id="cc-name" type="text" placeholder="Enter your name" maxlength="16" autofocus />
+      <div id="cc-name-error" style="color:#f44;margin-top:4px;display:none"></div>
       <button id="cc-next" class="cc-btn primary">Next</button>
     `;
     const input = this.container.querySelector('#cc-name') as HTMLInputElement;
-    const btn = this.container.querySelector('#cc-next')!;
+    const btn = this.container.querySelector('#cc-next') as HTMLButtonElement;
+    const errorEl = this.container.querySelector('#cc-name-error') as HTMLElement;
+    let checking = false;
+
+    const handler = (msg: { type: string; reason?: string }) => {
+      if (msg.type === 'NAME_AVAILABLE') {
+        checking = false;
+        btn.disabled = false;
+        btn.textContent = 'Next';
+        this.step = 'race';
+        this.render();
+      } else if (msg.type === 'NAME_TAKEN') {
+        checking = false;
+        btn.disabled = false;
+        btn.textContent = 'Next';
+        errorEl.textContent = msg.reason ?? 'That name is already in use';
+        errorEl.style.display = '';
+        input.focus();
+      }
+    };
+
+    this.nameCheckCleanup = this.network.onMessage(handler as any);
+
     const next = () => {
+      if (checking) return;
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
       this.displayName = name;
-      this.step = 'race';
-      this.render();
+      errorEl.style.display = 'none';
+      checking = true;
+      btn.disabled = true;
+      btn.textContent = 'Checking...';
+      this.network.send({ type: 'CHECK_NAME', displayName: name } as any);
     };
     btn.addEventListener('click', next);
     input.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') next(); });

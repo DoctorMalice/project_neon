@@ -16,7 +16,12 @@ export class Network {
   latency = 0;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
 
+  get connected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
   connect(url: string): Promise<void> {
+    if (this.connected) return Promise.resolve();
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(url);
 
@@ -62,8 +67,11 @@ export class Network {
     }
   }
 
-  onMessage(handler: MessageHandler) {
+  onMessage(handler: MessageHandler): () => void {
     this.handlers.push(handler);
+    return () => {
+      this.handlers = this.handlers.filter(h => h !== handler);
+    };
   }
 
   /** Average bytes per minute (received + sent) over the last 60 seconds */

@@ -108,7 +108,12 @@ export interface ClientCraftMessage {
   recipeId: string;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage | ClientEquipMessage | ClientUnequipMessage | ClientCraftMessage;
+export interface ClientCheckNameMessage {
+  type: 'CHECK_NAME';
+  displayName: string;
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage | ClientEquipMessage | ClientUnequipMessage | ClientCraftMessage | ClientCheckNameMessage;
 
 // ---- Server → Client messages ----
 
@@ -165,6 +170,10 @@ export interface ServerReconnectFailedMessage {
 export interface ServerNameTakenMessage {
   type: 'NAME_TAKEN';
   reason: string;
+}
+
+export interface ServerNameAvailableMessage {
+  type: 'NAME_AVAILABLE';
 }
 
 export interface ServerAlreadyConnectedMessage {
@@ -234,4 +243,5 @@ export type ServerMessage =
   | ServerLevelUpMessage
   | ServerReconnectFailedMessage
   | ServerAlreadyConnectedMessage
-  | ServerNameTakenMessage;
+  | ServerNameTakenMessage
+  | ServerNameAvailableMessage;

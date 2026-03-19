@@ -434,6 +434,22 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === 'CHECK_NAME') {
+      const name = msg.displayName.trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
+      if (!name) {
+        send(ws, { type: 'NAME_TAKEN', reason: 'Name cannot be empty' });
+        return;
+      }
+      const nameLower = name.toLowerCase();
+      const takenByActive = [...players.values()].some(p => p.displayName.toLowerCase() === nameLower);
+      if (takenByActive || persistence.isNameTaken(name)) {
+        send(ws, { type: 'NAME_TAKEN', reason: 'That name is already in use' });
+      } else {
+        send(ws, { type: 'NAME_AVAILABLE' });
+      }
+      return;
+    }
+
     if (!player) return; // not joined yet
 
     if (msg.type === 'MOVE_TO') {
