@@ -25,6 +25,10 @@ export class Combat {
         action,
       });
     });
+
+    this.ui.setOnClose(() => {
+      this.network.send({ type: 'COMBAT_CLOSE' } as any);
+    });
   }
 
   get inCombat(): boolean {

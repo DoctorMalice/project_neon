@@ -113,7 +113,11 @@ export interface ClientCheckNameMessage {
   displayName: string;
 }
 
-export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage | ClientEquipMessage | ClientUnequipMessage | ClientCraftMessage | ClientCheckNameMessage;
+export interface ClientCombatCloseMessage {
+  type: 'COMBAT_CLOSE';
+}
+
+export type ClientMessage = ClientMoveToMessage | ClientChatMessage | ClientJoinMessage | ClientPingMessage | ClientPickupMessage | ClientCombatMessage | ClientCharacterCreateMessage | ClientAllocateAttributesMessage | ClientReconnectMessage | ClientEquipMessage | ClientUnequipMessage | ClientCraftMessage | ClientCheckNameMessage | ClientCombatCloseMessage;
 
 // ---- Server → Client messages ----
 

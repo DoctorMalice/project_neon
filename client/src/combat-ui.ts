@@ -43,6 +43,7 @@ export class CombatUI {
   private selectedStrategy: CombatStrategy = 'technical';
   private selectedDamageType: PhysicalDamageType = 'slicing';
   private onAction: CombatActionCallback | null = null;
+  private onClose: (() => void) | null = null;
   private actionsEnabled = false;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private turnDeadline = 0;
@@ -169,6 +170,10 @@ export class CombatUI {
 
   setOnAction(cb: CombatActionCallback): void {
     this.onAction = cb;
+  }
+
+  setOnClose(cb: () => void): void {
+    this.onClose = cb;
   }
 
   setAvailableDamageTypes(types: PhysicalDamageType[]): void {
@@ -375,6 +380,7 @@ export class CombatUI {
     this.resultSection.innerHTML = html;
 
     this.resultSection.querySelector('#combat-close-btn')!.addEventListener('click', () => {
+      if (this.onClose) this.onClose();
       this.hide();
     });
   }

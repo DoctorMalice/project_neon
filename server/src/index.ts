@@ -88,6 +88,7 @@ initEnemySpawns();
 // ---- Combat ----
 
 const playerCombats = new Map<string, string>(); // playerId → combatId
+const pendingDefeatRespawns = new Map<string, () => void>(); // playerId → respawn callback
 
 function snapPlayerToTile(p: ServerPlayer): void {
   p.position.x = Math.round(p.position.x);
@@ -141,27 +142,37 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
     character.combatStats.ep = finalStats.ep;
     character.combatStats.kp = finalStats.kp;
 
-    // Defeated players respawn at map center with full stats
+    // Defeated players respawn when they close the combat UI
     if (finalStats.hp <= 0 && p) {
-      const spawnPos = findSpawnPoint();
-      p.position = { x: spawnPos.x, y: spawnPos.y };
-      p.path = [];
-      p.pathIndex = 0;
+      const pid = playerId;
+      pendingDefeatRespawns.set(pid, () => {
+        const ch = characters.get(pid);
+        const pl = players.get(pid);
+        if (!ch || !pl) return;
 
-      // Restore all resources to max
-      character.combatStats.hp = character.combatStats.maxHp;
-      character.combatStats.mp = character.combatStats.maxMp;
-      character.combatStats.sp = character.combatStats.maxSp;
-      character.combatStats.ep = character.combatStats.maxEp;
-      character.combatStats.kp = character.combatStats.maxKp;
+        const spawnPos = findSpawnPoint();
+        pl.position = { x: spawnPos.x, y: spawnPos.y };
+        pl.path = [];
+        pl.pathIndex = 0;
 
-      send(p.ws, {
-        type: 'CHARACTER_STATE',
-        sheet: character.sheet,
-        combatStats: character.combatStats,
-        equipment: character.equipment,
+        ch.combatStats.hp = ch.combatStats.maxHp;
+        ch.combatStats.mp = ch.combatStats.maxMp;
+        ch.combatStats.sp = ch.combatStats.maxSp;
+        ch.combatStats.ep = ch.combatStats.maxEp;
+        ch.combatStats.kp = ch.combatStats.maxKp;
+
+        send(pl.ws, {
+          type: 'CHARACTER_STATE',
+          sheet: ch.sheet,
+          combatStats: ch.combatStats,
+          equipment: ch.equipment,
+        });
+        broadcast({
+          type: 'WORLD_STATE',
+          players: getPlayerStates(),
+        });
+        savePlayerState(pid);
       });
-      savePlayerState(playerId);
     }
   }
 
@@ -678,6 +689,15 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === 'COMBAT_CLOSE') {
+      const respawn = pendingDefeatRespawns.get(player.id);
+      if (respawn) {
+        pendingDefeatRespawns.delete(player.id);
+        respawn();
+      }
+      return;
+    }
+
     if (msg.type === 'JOIN_COMBAT') {
       if (playerCombats.has(player.id)) return;
       // Check range to the enemy in this combat
@@ -710,6 +730,13 @@ wss.on('connection', (ws) => {
       if (playerCombats.has(player.id)) {
         combat.handleDisconnect(player.id);
         playerCombats.delete(player.id);
+      }
+
+      // Execute any pending defeat respawn so state is saved correctly
+      const respawn = pendingDefeatRespawns.get(player.id);
+      if (respawn) {
+        pendingDefeatRespawns.delete(player.id);
+        respawn();
       }
 
       // Save before cleanup so latest state is persisted
