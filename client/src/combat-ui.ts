@@ -353,10 +353,18 @@ export class CombatUI {
 
   showResult(result: 'victory' | 'defeat' | 'fled', xp: number, loot: InventoryItem[]): void {
     this.controlsSection.style.display = 'none';
-    this.resultSection.style.display = '';
     this.stopTimer();
 
-    let html = `<div class="combat-result-title ${result}">${result === 'victory' ? 'Victory!' : result === 'defeat' ? 'Defeat!' : 'Fled!'}</div>`;
+    const message = result === 'victory' ? 'You are victorious!'
+      : result === 'defeat' ? 'You were defeated...'
+      : 'You fled from combat!';
+
+    // Final message in the log area, no button
+    this.logSection.innerHTML = `<div class="combat-log-entry">${message}</div>`;
+
+    // Rewards and close button in the result section
+    this.resultSection.style.display = '';
+    let html = '';
     if (result === 'victory') {
       html += `<div class="combat-reward">+${xp} XP</div>`;
       if (loot.length > 0) {
