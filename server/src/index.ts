@@ -21,7 +21,7 @@ import {
 } from 'shared';
 import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from './enemies';
 import * as combat from './combat';
-import { createCharacter, addXP, allocateAttributes, equipItem, unequipSlot, type ServerCharacter } from './player-state';
+import { createCharacter, addXP, addSkillXP, allocateAttributes, equipItem, unequipSlot, type ServerCharacter } from './player-state';
 import { type EquipSlot, EQUIP_SLOTS, ITEM_DEFS, getEquippedWeaponDamageTypes, RECIPES, canCraft } from 'shared';
 import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, type CombatStats, deriveCombatStats } from 'shared';
 import * as persistence from './persistence';
@@ -119,10 +119,10 @@ function savePlayerState(playerId: string): void {
   if (!token || !character || !player) return;
   const inv = inventories.get(playerId) ?? [];
   const pos = { x: Math.round(player.position.x), y: Math.round(player.position.y) };
-  persistence.savePlayer(token, player.displayName, character.sheet, character.combatStats, inv, character.equipment, pos);
+  persistence.savePlayer(token, player.displayName, character.sheet, character.combatStats, character.skills, inv, character.equipment, pos);
 }
 
-function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>, allyFinalStats: Map<string, CombatStats>): void {
+function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>, allyFinalStats: Map<string, CombatStats>, skillXP: Map<string, Record<string, number>>): void {
   // Remove all players from combat tracking
   for (const [playerId, cid] of playerCombats) {
     if (cid === combatId) {
@@ -166,6 +166,7 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
           sheet: ch.sheet,
           combatStats: ch.combatStats,
           equipment: ch.equipment,
+          skills: ch.skills,
         });
         broadcast({
           type: 'WORLD_STATE',
@@ -203,11 +204,55 @@ function onCombatEnd(combatId: string, winners: Map<string, { xp: number; loot: 
         };
         broadcast(chatMsg);
       }
+    }
+  }
+
+  // Award skill XP to all players who dealt damage (winners and losers)
+  for (const [playerId, playerSkillXP] of skillXP) {
+    const character = characters.get(playerId);
+    const player = players.get(playerId);
+    if (!character || !player) continue;
+
+    let totalCoreXP = 0;
+    for (const [skillId, amount] of Object.entries(playerSkillXP)) {
+      const skillResult = addSkillXP(character, skillId as any, amount);
+      totalCoreXP += skillResult.coreXPAwarded;
+    }
+
+    // Award core XP from skills
+    if (totalCoreXP > 0) {
+      const result = addXP(character, totalCoreXP);
+      if (result.leveled) {
+        send(player.ws, {
+          type: 'LEVEL_UP',
+          newLevel: result.newLevel,
+          attributePointsGained: (result.newLevel - result.oldLevel) * 3,
+          growthIncreases: result.growthIncreases,
+        });
+        const chatMsg: ServerMessage = {
+          type: 'CHAT',
+          playerId: 'system',
+          displayName: 'System',
+          message: `${player.displayName} has reached level ${result.newLevel}!`,
+          timestamp: Date.now(),
+        };
+        broadcast(chatMsg);
+      }
+    }
+  }
+
+  // Send CHARACTER_STATE and save for all players that got rewards or skill XP
+  const updatedPlayers = new Set([...winners.keys(), ...skillXP.keys()]);
+  for (const playerId of updatedPlayers) {
+    const character = characters.get(playerId);
+    const player = players.get(playerId);
+    if (character && player) {
       send(player.ws, {
         type: 'CHARACTER_STATE',
         sheet: character.sheet,
         combatStats: character.combatStats,
         equipment: character.equipment,
+        skills: character.skills,
       });
       savePlayerState(playerId);
     }
@@ -297,7 +342,8 @@ wss.on('connection', (ws) => {
       players.set(id, player);
 
       // Restore character from saved data
-      const freshStats = deriveCombatStats(saved.sheet);
+      const restoredSkills = saved.skills ?? {};
+      const freshStats = deriveCombatStats(saved.sheet, restoredSkills);
       const character: ServerCharacter = {
         sheet: saved.sheet,
         combatStats: saved.combatStats ? {
@@ -310,6 +356,7 @@ wss.on('connection', (ws) => {
           kp: Math.min(saved.combatStats.kp ?? freshStats.maxKp, freshStats.maxKp),
         } : freshStats,
         equipment: saved.equipment ?? {},
+        skills: restoredSkills,
       };
       characters.set(id, character);
       playerTokens.set(id, token);
@@ -319,7 +366,7 @@ wss.on('connection', (ws) => {
 
       // Send join info
       send(ws, { type: 'JOINED', playerId: id, token });
-      send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment });
+      send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment, skills: character.skills });
       send(ws, { type: 'MAP', width: map[0].length, height: map.length, tiles: map.map((row) => row.map((t) => t as number)) });
       send(ws, { type: 'WORLD_STATE', players: getPlayerStates() });
       send(ws, { type: 'GROUND_ITEMS', items: getActiveGroundItems() });
@@ -392,6 +439,7 @@ wss.on('connection', (ws) => {
         sheet: character.sheet,
         combatStats: character.combatStats,
         equipment: character.equipment,
+        skills: character.skills,
       });
 
       // Send the map
@@ -556,6 +604,7 @@ wss.on('connection', (ws) => {
           sheet: character.sheet,
           combatStats: character.combatStats,
           equipment: character.equipment,
+          skills: character.skills,
         });
         savePlayerState(player.id);
       }
@@ -572,7 +621,7 @@ wss.on('connection', (ws) => {
       if (success) {
         inventories.set(player.id, inv);
         send(ws, { type: 'INVENTORY', items: inv });
-        send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment });
+        send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment, skills: character.skills });
         savePlayerState(player.id);
       }
       return;
@@ -588,7 +637,7 @@ wss.on('connection', (ws) => {
       if (success) {
         inventories.set(player.id, inv);
         send(ws, { type: 'INVENTORY', items: inv });
-        send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment });
+        send(ws, { type: 'CHARACTER_STATE', sheet: character.sheet, combatStats: character.combatStats, equipment: character.equipment, skills: character.skills });
         savePlayerState(player.id);
       }
       return;

@@ -13,12 +13,16 @@ import {
   COMBAT_LEVEL_SCALE_MAX,
   COMBAT_LEVEL_CLOSE_BAND,
   COMBAT_ACTION_TIMEOUT_MS,
+  BASE_SKILL_XP,
+  SKILL_XP_PER_DAMAGE,
+  STRATEGY_SKILL_MAP,
   type CombatState,
   type CombatParticipant,
   type CombatAction,
   type CombatLogEntry,
   type CombatStats,
   type CombatStrategy,
+  type CombatSkillId,
   type PhysicalDamageType,
   type DamageType,
   type WeightedEntry,
@@ -48,7 +52,8 @@ interface CombatInstance {
   players: Map<string, PlayerHandle>;
   actionTimeout: ReturnType<typeof setTimeout> | null;
   autoDefendedPlayerIds: Set<string>;
-  onEnd: (combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>, allyFinalStats: Map<string, CombatStats>) => void;
+  playerStrategyDamage: Map<string, Map<CombatSkillId, number>>; // playerId → skillId → total damage
+  onEnd: (combatId: string, winners: Map<string, { xp: number; loot: InventoryItem[] }>, allyFinalStats: Map<string, CombatStats>, skillXP: Map<string, Record<string, number>>) => void;
   onEnemyDied: (spawn: ServerEnemySpawn) => void;
   onPlayerFled: (playerId: string) => void;
 }
@@ -315,6 +320,17 @@ function resolveRound(combat: CombatInstance): void {
       if (target) {
         const entry = resolveDamage(ally, target, action.strategy, 'technical', action.damageType ?? 'bludgeoning', false);
         combat.state.log.push(entry);
+
+        // Track damage by skill for skill XP
+        if (entry.damage > 0) {
+          const skillId = STRATEGY_SKILL_MAP[action.strategy];
+          let playerDmg = combat.playerStrategyDamage.get(ally.id);
+          if (!playerDmg) {
+            playerDmg = new Map();
+            combat.playerStrategyDamage.set(ally.id, playerDmg);
+          }
+          playerDmg.set(skillId, (playerDmg.get(skillId) ?? 0) + entry.damage);
+        }
       }
     } else if (action.type === 'defend') {
       combat.state.log.push({
@@ -418,6 +434,16 @@ function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'
     combat.onEnemyDied(combat.enemySpawn);
   }
 
+  // Compute skill XP for all players who dealt damage
+  const skillXP = new Map<string, Record<string, number>>();
+  for (const [playerId, dmgMap] of combat.playerStrategyDamage) {
+    const playerSkillXP: Record<string, number> = {};
+    for (const [skillId, damage] of dmgMap) {
+      playerSkillXP[skillId] = BASE_SKILL_XP + SKILL_XP_PER_DAMAGE * damage;
+    }
+    skillXP.set(playerId, playerSkillXP);
+  }
+
   // Send end message to all players
   for (const [playerId, player] of combat.players) {
     const reward = winners.get(playerId);
@@ -427,6 +453,7 @@ function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'
       result,
       xpGained: reward?.xp ?? 0,
       loot: reward?.loot ?? [],
+      skillXPGained: skillXP.get(playerId),
       autoDefended: combat.autoDefendedPlayerIds.has(playerId),
     });
   }
@@ -437,7 +464,7 @@ function endCombat(combat: CombatInstance, result: 'victory' | 'defeat' | 'fled'
     allyFinalStats.set(ally.id, ally.stats);
   }
 
-  combat.onEnd(combat.id, winners, allyFinalStats);
+  combat.onEnd(combat.id, winners, allyFinalStats, skillXP);
   combats.delete(combat.id);
 }
 
@@ -510,6 +537,7 @@ export function createCombat(
     players: new Map([[player.id, player]]),
     actionTimeout: null,
     autoDefendedPlayerIds: new Set(),
+    playerStrategyDamage: new Map(),
     onEnd,
     onEnemyDied,
     onPlayerFled,

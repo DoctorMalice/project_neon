@@ -412,6 +412,21 @@
     .cp-apply-btn:hover { background: rgba(200, 184, 138, 0.25); }
     .cp-apply-btn:disabled { opacity: 0.4; cursor: default; }
 
+    /* Skills section */
+    .cp-skill-list { display: flex; flex-direction: column; gap: 3px; }
+    .cp-skill-row {
+      display: flex; align-items: center; gap: 6px; padding: 2px 0;
+    }
+    .cp-skill-name { font-size: 11px; color: #ccc; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cp-skill-level { font-size: 11px; color: #e8d8a8; font-weight: 600; width: 36px; text-align: right; flex-shrink: 0; }
+    .cp-skill-bar {
+      width: 40px; height: 4px; flex-shrink: 0;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px; overflow: hidden;
+    }
+    .cp-skill-fill { height: 100%; background: linear-gradient(90deg, #7a9cc4, #9ab8d8); border-radius: 2px; }
+    .combat-reward.skill-xp { color: #9ab8d8; }
+
     /* ---- Combat overlay ---- */
     #combat-overlay {
       position: absolute; inset: 0;

@@ -7,3 +7,4 @@ export * from './combat-messages';
 export * from './character';
 export * from './items';
 export * from './recipes';
+export * from './skills';

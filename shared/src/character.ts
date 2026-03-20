@@ -299,10 +299,11 @@ export function computeGrowths(race: RaceId, cls: ClassId): AttributeGrowths {
 // ---- Combat stat derivation ----
 
 import type { CombatStats } from './combat-types';
+import { type SkillXPMap, resolveSkillBonuses } from './skills';
 
-export function deriveCombatStats(sheet: CharacterSheet): CombatStats {
+export function deriveCombatStats(sheet: CharacterSheet, skills?: SkillXPMap): CombatStats {
   const a = sheet.attributes;
-  return {
+  const stats: CombatStats = {
     level: sheet.level,
     hp: a.constitution, maxHp: a.constitution,
     mp: a.mentis, maxMp: a.mentis,
@@ -319,4 +320,15 @@ export function deriveCombatStats(sheet: CharacterSheet): CombatStats {
     resistances: {},
     immunities: [],
   };
+
+  if (skills) {
+    const bonuses = resolveSkillBonuses(skills);
+    stats.accuracy += bonuses.accuracy;
+    stats.power += bonuses.power;
+    stats.speed += bonuses.speed;
+    stats.defense += bonuses.defense;
+    stats.dodge += bonuses.dodge;
+  }
+
+  return stats;
 }

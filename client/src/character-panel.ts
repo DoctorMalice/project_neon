@@ -1,10 +1,14 @@
 import {
   ATTRIBUTE_KEYS,
+  COMBAT_SKILL_IDS,
+  SKILL_DEFS,
   type CharacterSheet,
   type CombatStats,
   type AttributeKey,
   type Attributes,
+  type SkillXPMap,
   getTotalXPForLevel,
+  getLevelFromXP,
 } from 'shared';
 import type { Network } from './network';
 
@@ -31,6 +35,7 @@ export class CharacterPanel {
   private visible = false;
   private sheet: CharacterSheet | null = null;
   private combatStats: CombatStats | null = null;
+  private skills: SkillXPMap = {};
   private pendingChanges: Partial<Record<AttributeKey, number>> = {};
   private pendingCost = 0;
 
@@ -67,9 +72,10 @@ export class CharacterPanel {
     if (this.visible) this.renderPanel();
   }
 
-  update(sheet: CharacterSheet, combatStats: CombatStats): void {
+  update(sheet: CharacterSheet, combatStats: CombatStats, skills?: SkillXPMap): void {
     this.sheet = sheet;
     this.combatStats = combatStats;
+    this.skills = skills ?? {};
     this.pendingChanges = {};
     this.pendingCost = 0;
     if (this.visible) this.renderPanel();
@@ -118,6 +124,25 @@ export class CharacterPanel {
       </div>`;
     }
 
+    html += '</div>';
+
+    // Skills section
+    html += `<div class="cp-section-title">Skills</div><div class="cp-skill-list">`;
+    for (const skillId of COMBAT_SKILL_IDS) {
+      const xp = this.skills[skillId] ?? 0;
+      const level = getLevelFromXP(xp);
+      const xpForCurrent = getTotalXPForLevel(level);
+      const xpForNext = getTotalXPForLevel(level + 1);
+      const xpInLevel = xp - xpForCurrent;
+      const xpNeeded = xpForNext - xpForCurrent;
+      const pct = xpNeeded > 0 ? Math.min(100, (xpInLevel / xpNeeded) * 100) : 0;
+      const def = SKILL_DEFS[skillId];
+      html += `<div class="cp-skill-row" title="${def.description}">
+        <span class="cp-skill-name">${def.name}</span>
+        <span class="cp-skill-level">Lv ${level}</span>
+        <div class="cp-skill-bar"><div class="cp-skill-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }
     html += '</div>';
 
     if (this.sheet.attributePoints > 0) {

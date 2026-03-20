@@ -8,12 +8,15 @@ import {
   type Equipment,
   type EquipSlot,
   type InventoryItem,
+  type SkillXPMap,
+  type SkillId,
   ATTRIBUTE_KEYS,
   STARTING_ATTRIBUTE_POINTS,
   ATTRIBUTE_POINTS_PER_LEVEL,
   EQUIP_SLOTS,
   HAND_SLOTS,
   ITEM_DEFS,
+  SKILL_TO_CORE_XP_DIVISOR,
   computeBaseAttributes,
   computeGrowths,
   deriveCombatStats,
@@ -24,6 +27,7 @@ export interface ServerCharacter {
   sheet: CharacterSheet;
   combatStats: CombatStats;
   equipment: Equipment;
+  skills: SkillXPMap;
 }
 
 export function createCharacter(
@@ -68,6 +72,7 @@ export function createCharacter(
     sheet,
     combatStats: deriveCombatStats(sheet),
     equipment: {},
+    skills: {},
   };
 }
 
@@ -112,6 +117,26 @@ export function addXP(character: ServerCharacter, amount: number): LevelUpResult
   return { leveled: true, oldLevel, newLevel, growthIncreases };
 }
 
+export interface SkillXPResult {
+  coreXPAwarded: number;
+  oldLevel: number;
+  newLevel: number;
+}
+
+export function addSkillXP(character: ServerCharacter, skillId: SkillId, amount: number): SkillXPResult {
+  const oldXP = character.skills[skillId] ?? 0;
+  const oldLevel = getLevelFromXP(oldXP);
+  character.skills[skillId] = oldXP + amount;
+  const newLevel = getLevelFromXP(character.skills[skillId]!);
+  const coreXPAwarded = Math.floor(amount / SKILL_TO_CORE_XP_DIVISOR);
+
+  if (newLevel !== oldLevel) {
+    refreshCombatStats(character);
+  }
+
+  return { coreXPAwarded, oldLevel, newLevel };
+}
+
 export function allocateAttributes(character: ServerCharacter, changes: Partial<Attributes>): boolean {
   let cost = 0;
   for (const key of Object.keys(changes) as AttributeKey[]) {
@@ -137,7 +162,7 @@ export function allocateAttributes(character: ServerCharacter, changes: Partial<
 
 /** Recalculate max values from attributes but preserve current resource pools (clamped to new max) */
 export function refreshCombatStats(character: ServerCharacter): void {
-  const fresh = deriveCombatStats(character.sheet);
+  const fresh = deriveCombatStats(character.sheet, character.skills);
   const old = character.combatStats;
 
   // Preserve current resource values, clamped to new max

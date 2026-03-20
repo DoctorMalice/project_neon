@@ -11,7 +11,7 @@ export class Combat {
 
   // Queued messages that arrive during playback
   private pendingUpdate: { state: CombatState; autoDefended: boolean } | null = null;
-  private pendingEnd: { state: CombatState; result: 'victory' | 'defeat' | 'fled'; xp: number; loot: InventoryItem[]; autoDefended: boolean } | null = null;
+  private pendingEnd: { state: CombatState; result: 'victory' | 'defeat' | 'fled'; xp: number; loot: InventoryItem[]; skillXPGained?: Record<string, number>; autoDefended: boolean } | null = null;
 
   constructor(network: Network) {
     this.network = network;
@@ -75,19 +75,19 @@ export class Combat {
       case 'COMBAT_END':
         if (this.ui.inPlayback) {
           // Queue the end — will show after current playback
-          this.pendingEnd = { state: msg.state, result: msg.result, xp: msg.xpGained, loot: msg.loot, autoDefended: !!msg.autoDefended };
+          this.pendingEnd = { state: msg.state, result: msg.result, xp: msg.xpGained, loot: msg.loot, skillXPGained: msg.skillXPGained, autoDefended: !!msg.autoDefended };
           return true;
         }
 
         if (!msg.autoDefended && msg.state.log.length > 0) {
           // Play through the final round's log, then show result
-          this.pendingEnd = { state: msg.state, result: msg.result, xp: msg.xpGained, loot: msg.loot, autoDefended: false };
+          this.pendingEnd = { state: msg.state, result: msg.result, xp: msg.xpGained, loot: msg.loot, skillXPGained: msg.skillXPGained, autoDefended: false };
           this.ui.startPlayback(msg.state, this.myPlayerId!, () => {
             this.onPlaybackDone(msg.state);
           });
         } else {
           this.ui.updateState(msg.state, this.myPlayerId!);
-          this.ui.showResult(msg.result, msg.xpGained, msg.loot);
+          this.ui.showResult(msg.result, msg.xpGained, msg.loot, msg.skillXPGained);
           this.currentCombatId = null;
         }
         return true;
@@ -108,12 +108,12 @@ export class Combat {
       if (!end.autoDefended && end.state.combatId === playedState.combatId && end.state.log.length > 0 && end.state !== playedState) {
         this.ui.startPlayback(end.state, this.myPlayerId!, () => {
           this.ui.updateState(end.state, this.myPlayerId!);
-          this.ui.showResult(end.result, end.xp, end.loot);
+          this.ui.showResult(end.result, end.xp, end.loot, end.skillXPGained);
           this.currentCombatId = null;
         });
       } else {
         this.ui.updateState(end.state, this.myPlayerId!);
-        this.ui.showResult(end.result, end.xp, end.loot);
+        this.ui.showResult(end.result, end.xp, end.loot, end.skillXPGained);
         this.currentCombatId = null;
       }
       return;

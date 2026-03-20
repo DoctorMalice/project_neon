@@ -2,8 +2,10 @@ import {
   COMBAT_STRATEGIES,
   COMBAT_ACTION_TIMEOUT_MS,
   PHYSICAL_DAMAGE_TYPES,
+  SKILL_DEFS,
   type CombatState,
   type CombatStrategy,
+  type CombatSkillId,
   type PhysicalDamageType,
   type CombatAction,
   type CombatLogEntry,
@@ -356,7 +358,7 @@ export class CombatUI {
     if (cb) cb();
   }
 
-  showResult(result: 'victory' | 'defeat' | 'fled', xp: number, loot: InventoryItem[]): void {
+  showResult(result: 'victory' | 'defeat' | 'fled', xp: number, loot: InventoryItem[], skillXPGained?: Record<string, number>): void {
     this.controlsSection.style.display = 'none';
     this.stopTimer();
 
@@ -374,6 +376,14 @@ export class CombatUI {
       html += `<div class="combat-reward">+${xp} XP</div>`;
       if (loot.length > 0) {
         html += loot.map(l => `<div class="combat-reward">${l.itemType} x${l.quantity}</div>`).join('');
+      }
+    }
+    if (skillXPGained) {
+      for (const [skillId, amount] of Object.entries(skillXPGained)) {
+        const def = SKILL_DEFS[skillId as CombatSkillId];
+        if (def) {
+          html += `<div class="combat-reward skill-xp">+${amount} ${def.name} XP</div>`;
+        }
       }
     }
     html += `<button id="combat-close-btn" class="combat-action-btn">Close</button>`;

@@ -42,6 +42,7 @@ export interface ServerCombatEndMessage {
   result: 'victory' | 'defeat' | 'fled';
   xpGained: number;
   loot: InventoryItem[];
+  skillXPGained?: Record<string, number>;
   autoDefended?: boolean;  // true if this player was auto-defended (timed out)
 }
 

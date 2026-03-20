@@ -146,7 +146,7 @@ async function start(mode: { type: 'create'; displayName: string; race: string; 
     // Handle character messages
     if (msg.type === 'CHARACTER_STATE') {
       characterState = msg.sheet;
-      characterPanel.update(msg.sheet, msg.combatStats);
+      characterPanel.update(msg.sheet, msg.combatStats, msg.skills);
       playerHud.update(msg.sheet, msg.combatStats);
       inventory.updateEquipment(msg.equipment);
       combatManager.setEquipment(msg.equipment);

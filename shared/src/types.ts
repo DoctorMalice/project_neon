@@ -215,12 +215,14 @@ import type { CharacterSheet } from './character';
 import type { CombatStats } from './combat-types';
 import type { ServerCombatMessage } from './combat-messages';
 import type { Equipment } from './items';
+import type { SkillXPMap } from './skills';
 
 export interface ServerCharacterStateMessage {
   type: 'CHARACTER_STATE';
   sheet: CharacterSheet;
   combatStats: CombatStats;
   equipment: Equipment;
+  skills: SkillXPMap;
 }
 
 export interface ServerLevelUpMessage {
