@@ -26,6 +26,13 @@ export class Combat {
       });
     });
 
+    this.ui.setOnAuraToggle((auraId) => {
+      this.network.send({
+        type: 'COMBAT_AURA_TOGGLE',
+        auraId,
+      });
+    });
+
     this.ui.setOnClose(() => {
       this.network.send({ type: 'COMBAT_CLOSE' } as any);
     });

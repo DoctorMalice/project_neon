@@ -54,6 +54,7 @@ export interface CombatStats {
   speed: number;
   defense: number;
   dodge: number;
+  intelligence: number;
   critBonus: number;
   damageTypeBonuses: Partial<Record<DamageType, number>>;
   resistances: Partial<Record<DamageType, number>>;
@@ -102,9 +103,11 @@ export interface EnemyDef {
 // ---- Combat actions ----
 
 export interface CombatAction {
-  type: 'attack' | 'defend' | 'run';
+  type: 'attack' | 'defend' | 'run' | 'ability' | 'spell';
   strategy: CombatStrategy;
   damageType?: PhysicalDamageType;
+  abilityId?: string;
+  spellId?: string;
 }
 
 // ---- Combat log ----
@@ -128,6 +131,14 @@ export type CombatPhase = 'awaiting_action' | 'resolving' | 'victory' | 'defeat'
 
 import type { Equipment } from './items';
 
+export interface RegenStats {
+  regeneration: number;
+  fortitude: number;
+  recovery: number;
+  recuperation: number;
+  meditation: number;
+}
+
 export interface CombatParticipant {
   id: string;
   name: string;
@@ -136,6 +147,8 @@ export interface CombatParticipant {
   alive: boolean;
   equipment: Equipment;
   combatFlags?: Partial<EnemyCombatFlags>;
+  activeAuras: string[];
+  regenStats: RegenStats;
 }
 
 export interface CombatState {

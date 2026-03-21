@@ -538,6 +538,10 @@
     .combat-bar.hp { background: linear-gradient(90deg, #c44, #d77); }
     .combat-bar.mp { background: linear-gradient(90deg, #558, #77a); }
     .combat-bar.sp { background: linear-gradient(90deg, #a85, #cb7); }
+    .combat-bar.ep { background: linear-gradient(90deg, #a65, #c87); }
+    .combat-bar.kp { background: linear-gradient(90deg, #6a8, #8cb); }
+    .combat-bar-container.ep-bar { height: 6px; }
+    .combat-bar-container.kp-bar { height: 6px; }
     .combat-card.ally .combat-bar.hp { background: linear-gradient(90deg, #5a4, #7c6); }
 
     /* Ally status */
@@ -555,6 +559,24 @@
     }
     .combat-ally-status.incapacitated {
       color: #d05545;
+    }
+    .combat-aura-indicators {
+      font-size: 9px; color: #8cb8a8; font-weight: 600;
+      letter-spacing: 0.3px; padding: 1px 0;
+    }
+    .combat-resource-display {
+      display: flex; gap: 12px; padding: 2px 0 4px;
+      font-size: 11px; font-weight: 600;
+    }
+    .combat-resource.ep { color: #c87; }
+    .combat-resource.mp { color: #77a; }
+    .combat-resource.kp { color: #8cb; }
+    .combat-aura-btn.active {
+      background: rgba(100, 180, 140, 0.25);
+      border-color: #6ab48c; color: #8cd8b8;
+    }
+    .combat-aura-btn.disabled {
+      opacity: 0.4; cursor: default;
     }
     .combat-log-incapacitated {
       color: #d05545; font-style: italic;
@@ -642,6 +664,10 @@
     .combat-action-btn.attack:hover { background: rgba(200, 60, 50, 0.4); }
     .combat-action-btn.defend { background: rgba(60, 100, 180, 0.25); border-color: rgba(60,100,180,0.4); }
     .combat-action-btn.defend:hover { background: rgba(60, 100, 180, 0.4); }
+    .combat-action-btn.ability { background: rgba(180, 100, 60, 0.25); border-color: rgba(180,100,60,0.4); }
+    .combat-action-btn.ability:hover { background: rgba(180, 100, 60, 0.4); }
+    .combat-action-btn.spell { background: rgba(100, 60, 180, 0.25); border-color: rgba(100,60,180,0.4); }
+    .combat-action-btn.spell:hover { background: rgba(100, 60, 180, 0.4); }
     .combat-action-btn.run { background: rgba(180, 160, 60, 0.2); border-color: rgba(180,160,60,0.35); }
     .combat-action-btn.run:hover { background: rgba(180, 160, 60, 0.35); }
     .combat-action-btn.disabled, .combat-action-btn:disabled {

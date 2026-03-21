@@ -23,7 +23,7 @@ import { initEnemySpawns, getActiveMapEnemies, enemySpawns, ENEMY_DEFS } from '.
 import * as combat from './combat';
 import { createCharacter, addXP, addSkillXP, allocateAttributes, equipItem, unequipSlot, type ServerCharacter } from './player-state';
 import { type EquipSlot, EQUIP_SLOTS, ITEM_DEFS, getEquippedWeaponDamageTypes, RECIPES, canCraft } from 'shared';
-import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, type CombatStats, deriveCombatStats } from 'shared';
+import { type RaceId, type ClassId, RACE_IDS, CLASS_IDS, ATTRIBUTE_KEYS, type AttributeKey, type CombatStats, type RegenStats, deriveCombatStats } from 'shared';
 import * as persistence from './persistence';
 
 // ---- State ----
@@ -89,6 +89,17 @@ initEnemySpawns();
 
 const playerCombats = new Map<string, string>(); // playerId → combatId
 const pendingDefeatRespawns = new Map<string, () => void>(); // playerId → respawn callback
+
+function getRegenStats(character: ServerCharacter): RegenStats {
+  const a = character.sheet.attributes;
+  return {
+    regeneration: a.regeneration,
+    fortitude: a.fortitude,
+    recovery: a.recovery,
+    recuperation: a.recuperation,
+    meditation: a.meditation,
+  };
+}
 
 function snapPlayerToTile(p: ServerPlayer): void {
   p.position.x = Math.round(p.position.x);
@@ -694,11 +705,13 @@ wss.on('connection', (ws) => {
       // Check if enemy is already in combat (co-op join)
       const existingCombatId = combat.getCombatForEnemy(msg.enemySpawnId);
       if (existingCombatId) {
+        const joinRegenStats = charForAttack ? getRegenStats(charForAttack) : undefined;
         const joined = combat.joinCombat(
           { id: player.id, displayName: player.displayName, ws: player.ws },
           existingCombatId,
           attackStats,
           attackEquipment,
+          joinRegenStats,
         );
         if (joined) {
           playerCombats.set(player.id, existingCombatId);
@@ -708,6 +721,7 @@ wss.on('connection', (ws) => {
       }
 
       // Create new combat
+      const attackRegenStats = charForAttack ? getRegenStats(charForAttack) : undefined;
       const combatId = combat.createCombat(
         { id: player.id, displayName: player.displayName, ws: player.ws },
         msg.enemySpawnId,
@@ -716,6 +730,7 @@ wss.on('connection', (ws) => {
         onPlayerFled,
         attackStats,
         attackEquipment,
+        attackRegenStats,
       );
       if (combatId) {
         playerCombats.set(player.id, combatId);
@@ -735,6 +750,13 @@ wss.on('connection', (ws) => {
     if (msg.type === 'COMBAT_ACTION') {
       if (!playerCombats.has(player.id)) return;
       combat.submitAction(player.id, msg.combatId, msg.action);
+      return;
+    }
+
+    if (msg.type === 'COMBAT_AURA_TOGGLE') {
+      const combatId = playerCombats.get(player.id);
+      if (!combatId) return;
+      combat.toggleAura(player.id, combatId, msg.auraId);
       return;
     }
 
@@ -759,11 +781,13 @@ wss.on('connection', (ws) => {
       const charForJoin = characters.get(player.id);
       const joinStats = charForJoin?.combatStats;
       const joinEquipment = charForJoin?.equipment ?? {};
+      const joinRegenStats2 = charForJoin ? getRegenStats(charForJoin) : undefined;
       const joined = combat.joinCombat(
         { id: player.id, displayName: player.displayName, ws: player.ws },
         msg.combatId,
         joinStats,
         joinEquipment,
+        joinRegenStats2,
       );
       if (joined) {
         playerCombats.set(player.id, msg.combatId);

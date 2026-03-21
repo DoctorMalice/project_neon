@@ -315,6 +315,7 @@ export function deriveCombatStats(sheet: CharacterSheet, skills?: SkillXPMap): C
     speed: a.celerity,
     defense: a.toughness,
     dodge: a.dexterity,
+    intelligence: a.intelligence,
     critBonus: a.luck,
     damageTypeBonuses: {},
     resistances: {},

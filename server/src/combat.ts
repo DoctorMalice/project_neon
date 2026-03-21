@@ -31,7 +31,15 @@ import {
   type InventoryItem,
   type ServerMessage,
   type Equipment,
+  type RegenStats,
   resolveEquipmentBonuses,
+  ABILITY_DEFS,
+  type AbilityId,
+  SPELL_DEFS,
+  type SpellId,
+  AURA_DEFS,
+  type AuraId,
+  computeAuraEffects,
 } from 'shared';
 import { ENEMY_DEFS, enemySpawns, type ServerEnemySpawn } from './enemies';
 import type { WebSocket } from 'ws';
@@ -79,7 +87,7 @@ function clamp(min: number, max: number, value: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function makeParticipant(id: string, name: string, isEnemy: boolean, stats: CombatStats, equipment: Equipment = {}, combatFlags?: Partial<EnemyCombatFlags>): CombatParticipant {
+function makeParticipant(id: string, name: string, isEnemy: boolean, stats: CombatStats, equipment: Equipment = {}, combatFlags?: Partial<EnemyCombatFlags>, regenStats?: RegenStats): CombatParticipant {
   return {
     id,
     name,
@@ -88,6 +96,8 @@ function makeParticipant(id: string, name: string, isEnemy: boolean, stats: Comb
     alive: true,
     equipment,
     combatFlags,
+    activeAuras: [],
+    regenStats: regenStats ?? { regeneration: 0, fortitude: 0, recovery: 0, recuperation: 0, meditation: 0 },
   };
 }
 
@@ -119,10 +129,15 @@ function resolveDamage(
   if (!attacker.isEnemy) { atkFlags.canCrit = true; atkFlags.canDodge = true; atkFlags.canMiss = false; }
   if (!defender.isEnemy) { defFlags.canCrit = true; defFlags.canDodge = true; defFlags.canMiss = true; }
 
+  // Aura effects
+  const atkAuraEffects = computeAuraEffects(attacker.activeAuras);
+  const defAuraEffects = computeAuraEffects(defender.activeAuras);
+
   // Attacker offense: base stats + attacker strategy + equipment bonuses for this damage type
   const atkEquip = resolveEquipmentBonuses(attacker.equipment, damageType);
   const effectiveAccuracy = attacker.stats.accuracy + atkBonus.accuracy + atkEquip.accuracy;
   const effectivePower = attacker.stats.power + atkBonus.power + atkEquip.power;
+  const effectiveSpeed = Math.floor(attacker.stats.speed * (1 + atkAuraEffects.speed));
   const effectiveCrit = attacker.stats.critBonus;
 
   // Defender defense: base stats + defender strategy + equipment bonuses for this damage type
@@ -215,6 +230,11 @@ function resolveDamage(
     damage = Math.floor(damage * COMBAT_DEFEND_REDUCTION);
   }
 
+  // Step 7b: Aura damage mitigation
+  if (defAuraEffects.damageMitigation > 0) {
+    damage = Math.floor(damage * (1 - defAuraEffects.damageMitigation));
+  }
+
   // Step 8: Close-level band minimum — ensure at least 1 damage if within close band
   const levelDelta = Math.abs(attacker.stats.level - defender.stats.level);
   if (levelDelta <= COMBAT_LEVEL_CLOSE_BAND && damage < 1) {
@@ -243,6 +263,273 @@ function resolveDamage(
     immune: false,
     message,
   };
+}
+
+// ---- Ability resolution ----
+
+function resolveAbility(
+  attacker: CombatParticipant,
+  defender: CombatParticipant,
+  abilityId: string,
+  combat: CombatInstance,
+): CombatLogEntry {
+  const def = ABILITY_DEFS[abilityId as AbilityId];
+  if (!def) {
+    return { actor: attacker.name, actorId: attacker.id, target: '', targetId: '', damage: 0, crit: false, dodged: false, defended: false, immune: false, message: `${attacker.name} tries an unknown ability!` };
+  }
+
+  // Check EP
+  if (attacker.stats.ep < def.epCost) {
+    return { actor: attacker.name, actorId: attacker.id, target: '', targetId: '', damage: 0, crit: false, dodged: false, defended: false, immune: false, message: `${attacker.name} doesn't have enough EP for ${def.name}!` };
+  }
+
+  // Deduct EP
+  attacker.stats.ep -= def.epCost;
+
+  // Resolve as attack with ability modifiers
+  // Use the ability's required strategy
+  const strategy = def.requiredStrategy;
+  const atkBonus = STRATEGY_BONUSES[strategy];
+  const defBonus = STRATEGY_BONUSES['technical']; // enemies use technical by default
+
+  const atkFlags: EnemyCombatFlags = { ...DEFAULT_ENEMY_COMBAT_FLAGS, ...attacker.combatFlags };
+  const defFlags: EnemyCombatFlags = { ...DEFAULT_ENEMY_COMBAT_FLAGS, ...defender.combatFlags };
+  if (!attacker.isEnemy) { atkFlags.canCrit = true; atkFlags.canDodge = true; atkFlags.canMiss = false; }
+  if (!defender.isEnemy) { defFlags.canCrit = true; defFlags.canDodge = true; defFlags.canMiss = true; }
+
+  const atkAuraEffects = computeAuraEffects(attacker.activeAuras);
+  const defAuraEffects = computeAuraEffects(defender.activeAuras);
+
+  const damageType: DamageType = 'bludgeoning';
+  const atkEquip = resolveEquipmentBonuses(attacker.equipment, damageType);
+  const effectiveAccuracy = attacker.stats.accuracy + atkBonus.accuracy + atkEquip.accuracy;
+  const effectivePower = attacker.stats.power + atkBonus.power + atkEquip.power;
+  const effectiveCrit = attacker.stats.critBonus;
+
+  const defEquip = resolveEquipmentBonuses(defender.equipment, damageType);
+  const effectiveDodge = defender.stats.dodge + defBonus.dodge + defEquip.dodge;
+  const effectiveDefense = defender.stats.defense + defBonus.defense + defEquip.defense;
+
+  // Dodge check
+  const dodgeChance = defFlags.canDodge
+    ? clamp(0, 1, (COMBAT_DODGE_BASE_PERCENT + effectiveDodge / COMBAT_BONUS_DIVISOR_CHANCE) / 100)
+    : 0;
+  if (dodgeChance > 0 && Math.random() < dodgeChance) {
+    return { actor: attacker.name, actorId: attacker.id, target: defender.name, targetId: defender.id, damage: 0, crit: false, dodged: true, defended: false, immune: false, message: `${defender.name} dodges ${attacker.name}'s ${def.name}!` };
+  }
+
+  // Damage roll with ability multipliers
+  let maxHit = Math.max(1, 1 + Math.floor(effectivePower / COMBAT_BONUS_DIVISOR_POWER));
+
+  // Apply ability effects
+  for (const effect of def.effects) {
+    if (effect.type === 'max_hit_multiplier') {
+      maxHit = Math.floor(maxHit * effect.value);
+    }
+  }
+
+  const minHit = clamp(1, maxHit, 1 + Math.floor(effectiveAccuracy / COMBAT_BONUS_DIVISOR_ACCURACY));
+  let damage = minHit + Math.floor(Math.random() * (maxHit - minHit + 1));
+
+  // Crit
+  const critChance = atkFlags.canCrit
+    ? clamp(0, 1, (COMBAT_CRIT_BASE_PERCENT + effectiveCrit / COMBAT_BONUS_DIVISOR_CHANCE) / 100)
+    : 0;
+  const crit = critChance > 0 && Math.random() < critChance;
+  if (crit) damage = Math.floor(damage * COMBAT_CRIT_MULTIPLIER);
+
+  // Defense mitigation
+  const defensePct = effectiveDefense / COMBAT_BONUS_DIVISOR_DEFENSE;
+  const mitigationMultiplier = Math.max(0, 1 - defensePct / 100);
+
+  // Level scaling
+  const levelScale = clamp(COMBAT_LEVEL_SCALE_MIN, COMBAT_LEVEL_SCALE_MAX, 1 + (attacker.stats.level - defender.stats.level) * COMBAT_LEVEL_SCALE_PER_LEVEL);
+  damage = Math.floor(damage * mitigationMultiplier * levelScale);
+
+  // Aura damage mitigation
+  if (defAuraEffects.damageMitigation > 0) {
+    damage = Math.floor(damage * (1 - defAuraEffects.damageMitigation));
+  }
+
+  // Close-level band minimum
+  const levelDelta = Math.abs(attacker.stats.level - defender.stats.level);
+  if (levelDelta <= COMBAT_LEVEL_CLOSE_BAND && damage < 1) damage = 1;
+
+  // Apply damage
+  defender.stats.hp -= damage;
+  if (defender.stats.hp <= 0) { defender.stats.hp = 0; defender.alive = false; }
+
+  let message = `${attacker.name} uses ${def.name} on ${defender.name} for ${damage} damage!`;
+  if (crit) message = `Critical hit! ${message}`;
+
+  return { actor: attacker.name, actorId: attacker.id, target: defender.name, targetId: defender.id, damage, crit, dodged: false, defended: false, immune: false, message };
+}
+
+// ---- Spell resolution ----
+
+function resolveSpell(
+  caster: CombatParticipant,
+  target: CombatParticipant,
+  spellId: string,
+  castStrategy: CombatStrategy,
+): CombatLogEntry {
+  const def = SPELL_DEFS[spellId as SpellId];
+  if (!def) {
+    return { actor: caster.name, actorId: caster.id, target: '', targetId: '', damage: 0, crit: false, dodged: false, defended: false, immune: false, message: `${caster.name} tries an unknown spell!` };
+  }
+
+  // Check MP
+  if (caster.stats.mp < def.mpCost) {
+    return { actor: caster.name, actorId: caster.id, target: '', targetId: '', damage: 0, crit: false, dodged: false, defended: false, immune: false, message: `${caster.name} doesn't have enough MP for ${def.name}!` };
+  }
+
+  // Deduct MP
+  caster.stats.mp -= def.mpCost;
+
+  // Backfire check
+  if (Math.random() < def.backfireChance * 0.1) {
+    const selfDamage = Math.max(1, Math.floor(def.basePower * 2));
+    caster.stats.hp -= selfDamage;
+    if (caster.stats.hp <= 0) { caster.stats.hp = 0; caster.alive = false; }
+    return { actor: caster.name, actorId: caster.id, target: caster.name, targetId: caster.id, damage: selfDamage, crit: false, dodged: false, defended: false, immune: false, message: `${caster.name}'s ${def.name} backfires for ${selfDamage} damage!` };
+  }
+
+  // Immunity check
+  if (target.stats.immunities.includes(def.element)) {
+    return { actor: caster.name, actorId: caster.id, target: target.name, targetId: target.id, damage: 0, crit: false, dodged: false, defended: false, immune: true, message: `${target.name} is immune to ${def.element}!` };
+  }
+
+  // Spell damage uses intelligence as base stat
+  const stratBonus = STRATEGY_BONUSES[castStrategy];
+  const power = caster.stats.intelligence + stratBonus.power;
+  const accuracy = caster.stats.intelligence + stratBonus.accuracy;
+
+  let maxHit = Math.max(1, Math.floor(1 + power / COMBAT_BONUS_DIVISOR_POWER));
+  const minHit = clamp(1, maxHit, 1 + Math.floor(accuracy / COMBAT_BONUS_DIVISOR_ACCURACY));
+  let damage = minHit + Math.floor(Math.random() * (maxHit - minHit + 1));
+
+  // Apply base_power multiplier
+  damage = Math.floor(damage * def.basePower);
+  if (damage < 1) damage = 1;
+
+  // Elemental effectiveness
+  const resistance = target.stats.resistances[def.element] ?? 0;
+  const effectiveness = Math.max(0, 1 - resistance);
+  damage = Math.floor(damage * effectiveness);
+
+  // Crit check (casters can always crit)
+  const critChance = clamp(0, 1, (COMBAT_CRIT_BASE_PERCENT + caster.stats.critBonus / COMBAT_BONUS_DIVISOR_CHANCE) / 100);
+  const crit = Math.random() < critChance;
+  if (crit) damage = Math.floor(damage * COMBAT_CRIT_MULTIPLIER);
+
+  // Defense mitigation
+  const defBonus = STRATEGY_BONUSES['technical'];
+  const defEquip = resolveEquipmentBonuses(target.equipment, def.element);
+  const effectiveDefense = target.stats.defense + defBonus.defense + defEquip.defense;
+  const defensePct = effectiveDefense / COMBAT_BONUS_DIVISOR_DEFENSE;
+  const mitigationMultiplier = Math.max(0, 1 - defensePct / 100);
+  damage = Math.floor(damage * mitigationMultiplier);
+
+  // Level scaling
+  const levelScale = clamp(COMBAT_LEVEL_SCALE_MIN, COMBAT_LEVEL_SCALE_MAX, 1 + (caster.stats.level - target.stats.level) * COMBAT_LEVEL_SCALE_PER_LEVEL);
+  damage = Math.floor(damage * levelScale);
+
+  // Aura damage mitigation on defender
+  const defAuraEffects = computeAuraEffects(target.activeAuras);
+  if (defAuraEffects.damageMitigation > 0) {
+    damage = Math.floor(damage * (1 - defAuraEffects.damageMitigation));
+  }
+
+  // Close-level band minimum
+  const levelDelta = Math.abs(caster.stats.level - target.stats.level);
+  if (levelDelta <= COMBAT_LEVEL_CLOSE_BAND && damage < 1) damage = 1;
+
+  // Apply damage
+  target.stats.hp -= damage;
+  if (target.stats.hp <= 0) { target.stats.hp = 0; target.alive = false; }
+
+  let effectMsg = '';
+  if (effectiveness < 1 && effectiveness > 0) effectMsg = ' (resisted)';
+  else if (effectiveness === 0) effectMsg = ' (fully resisted)';
+
+  let message = `${caster.name} casts ${def.name} on ${target.name} for ${damage} ${def.element} damage!${effectMsg}`;
+  if (crit) message = `Critical hit! ${message}`;
+
+  return { actor: caster.name, actorId: caster.id, target: target.name, targetId: target.id, damage, crit, dodged: false, defended: false, immune: false, message };
+}
+
+// ---- Aura toggle ----
+
+export function toggleAura(playerId: string, combatId: string, auraId: string): boolean {
+  const combat = combats.get(combatId);
+  if (!combat) return false;
+
+  const ally = combat.state.allies.find(a => a.id === playerId);
+  if (!ally || !ally.alive) return false;
+
+  const def = AURA_DEFS[auraId as AuraId];
+  if (!def) return false;
+
+  const idx = ally.activeAuras.indexOf(auraId);
+  if (idx >= 0) {
+    // Deactivate
+    ally.activeAuras.splice(idx, 1);
+  } else {
+    // Check KP to activate
+    if (ally.stats.kp < def.kpCost) return false;
+    ally.activeAuras.push(auraId);
+  }
+
+  // Broadcast updated state
+  for (const player of combat.players.values()) {
+    sendToPlayer(player, { type: 'COMBAT_UPDATE', state: combat.state });
+  }
+
+  return true;
+}
+
+// ---- Round-end resource regen and aura drain ----
+
+function applyRoundEndRegen(combat: CombatInstance): void {
+  for (const ally of combat.state.allies) {
+    if (!ally.alive) continue;
+    const r = ally.regenStats;
+
+    // Regen resources
+    ally.stats.hp = Math.min(ally.stats.maxHp, ally.stats.hp + Math.floor(r.regeneration / 10));
+    ally.stats.mp = Math.min(ally.stats.maxMp, ally.stats.mp + Math.floor(r.fortitude / 10));
+    ally.stats.sp = Math.min(ally.stats.maxSp, ally.stats.sp + Math.floor(r.recovery / 10));
+    ally.stats.ep = Math.min(ally.stats.maxEp, ally.stats.ep + Math.floor(r.recuperation / 10));
+    ally.stats.kp = Math.min(ally.stats.maxKp, ally.stats.kp + Math.floor(r.meditation / 10));
+
+    // Drain aura KP costs
+    if (ally.activeAuras.length > 0) {
+      let totalKpCost = 0;
+      for (const auraId of ally.activeAuras) {
+        const auraDef = AURA_DEFS[auraId as AuraId];
+        if (auraDef) totalKpCost += auraDef.kpCost;
+      }
+      ally.stats.kp -= totalKpCost;
+
+      // If KP hits 0 or below, deactivate all auras
+      if (ally.stats.kp <= 0) {
+        ally.stats.kp = 0;
+        ally.activeAuras = [];
+        combat.state.log.push({
+          actor: ally.name, actorId: ally.id, target: '', targetId: '', damage: 0,
+          crit: false, dodged: false, defended: false, immune: false,
+          message: `${ally.name}'s auras deactivate due to KP depletion!`,
+        });
+      }
+    }
+
+    // Clamp all resources
+    ally.stats.hp = clamp(0, ally.stats.maxHp, ally.stats.hp);
+    ally.stats.mp = clamp(0, ally.stats.maxMp, ally.stats.mp);
+    ally.stats.sp = clamp(0, ally.stats.maxSp, ally.stats.sp);
+    ally.stats.ep = clamp(0, ally.stats.maxEp, ally.stats.ep);
+    ally.stats.kp = clamp(0, ally.stats.maxKp, ally.stats.kp);
+  }
 }
 
 // ---- Round resolution ----
@@ -332,6 +619,32 @@ function resolveRound(combat: CombatInstance): void {
           playerDmg.set(skillId, (playerDmg.get(skillId) ?? 0) + entry.damage);
         }
       }
+    } else if (action.type === 'ability') {
+      const target = combat.state.enemies.find(e => e.alive);
+      if (target && action.abilityId) {
+        const entry = resolveAbility(ally, target, action.abilityId, combat);
+        combat.state.log.push(entry);
+
+        // Track damage by skill for skill XP (ability uses its required strategy)
+        if (entry.damage > 0) {
+          const abilityDef = ABILITY_DEFS[action.abilityId as AbilityId];
+          if (abilityDef) {
+            const skillId = STRATEGY_SKILL_MAP[abilityDef.requiredStrategy];
+            let playerDmg = combat.playerStrategyDamage.get(ally.id);
+            if (!playerDmg) {
+              playerDmg = new Map();
+              combat.playerStrategyDamage.set(ally.id, playerDmg);
+            }
+            playerDmg.set(skillId, (playerDmg.get(skillId) ?? 0) + entry.damage);
+          }
+        }
+      }
+    } else if (action.type === 'spell') {
+      const target = combat.state.enemies.find(e => e.alive);
+      if (target && action.spellId) {
+        const entry = resolveSpell(ally, target, action.spellId, action.strategy);
+        combat.state.log.push(entry);
+      }
     } else if (action.type === 'defend') {
       combat.state.log.push({
         actor: ally.name, actorId: ally.id, target: '', targetId: '', damage: 0,
@@ -381,6 +694,9 @@ function resolveRound(combat: CombatInstance): void {
     endCombat(combat, 'defeat');
     return;
   }
+
+  // Round-end regen and aura drain
+  applyRoundEndRegen(combat);
 
   // Continue to next round
   combat.state.round++;
@@ -496,6 +812,7 @@ export function createCombat(
   onPlayerFled: CombatInstance['onPlayerFled'],
   playerStats?: CombatStats,
   playerEquipment?: Equipment,
+  playerRegenStats?: RegenStats,
 ): string | null {
   const spawn = enemySpawns.get(enemySpawnId);
   if (!spawn || !spawn.active) return null;
@@ -505,8 +822,8 @@ export function createCombat(
 
   const combatId = `combat_${nextCombatId++}`;
 
-  const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
-  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats, playerEquipment ?? {});
+  const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, intelligence: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
+  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats, playerEquipment ?? {}, undefined, playerRegenStats);
   const enemyParticipant = makeParticipant(
     `enemy_${combatId}`,
     enemyDef.name,
@@ -551,15 +868,15 @@ export function createCombat(
   return combatId;
 }
 
-export function joinCombat(player: PlayerHandle, combatId: string, playerStats?: CombatStats, playerEquipment?: Equipment): boolean {
+export function joinCombat(player: PlayerHandle, combatId: string, playerStats?: CombatStats, playerEquipment?: Equipment, playerRegenStats?: RegenStats): boolean {
   const combat = combats.get(combatId);
   if (!combat) return false;
   if (combat.state.phase !== 'awaiting_action') return false;
   if (combat.state.allies.length >= 3) return false;
   if (combat.players.has(player.id)) return false;
 
-  const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
-  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats, playerEquipment ?? {});
+  const stats = playerStats ?? { level: 1, hp: 10, maxHp: 10, mp: 10, maxMp: 10, sp: 10, maxSp: 10, ep: 10, maxEp: 10, kp: 10, maxKp: 10, accuracy: 0, power: 5, speed: 5, defense: 5, dodge: 5, intelligence: 5, critBonus: 5, damageTypeBonuses: {}, resistances: {}, immunities: [] };
+  const allyParticipant = makeParticipant(player.id, player.displayName, false, stats, playerEquipment ?? {}, undefined, playerRegenStats);
   combat.state.allies.push(allyParticipant);
   combat.state.awaitingActionFrom.push(player.id);
   combat.players.set(player.id, player);

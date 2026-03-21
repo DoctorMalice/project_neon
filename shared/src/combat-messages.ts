@@ -18,10 +18,16 @@ export interface ClientJoinCombatMessage {
   combatId: string;
 }
 
+export interface ClientCombatAuraToggleMessage {
+  type: 'COMBAT_AURA_TOGGLE';
+  auraId: string;
+}
+
 export type ClientCombatMessage =
   | ClientAttackEnemyMessage
   | ClientCombatActionMessage
-  | ClientJoinCombatMessage;
+  | ClientJoinCombatMessage
+  | ClientCombatAuraToggleMessage;
 
 // ---- Server → Client combat messages ----
 

@@ -19,6 +19,7 @@ export const ENEMY_DEFS: Record<string, EnemyDef> = {
       speed: 10,
       defense: 4,
       dodge: 6,
+      intelligence: 2,
       critBonus: 2,
       damageTypeBonuses: {},
       resistances: {},

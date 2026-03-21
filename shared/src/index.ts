@@ -8,3 +8,4 @@ export * from './character';
 export * from './items';
 export * from './recipes';
 export * from './skills';
+export * from './abilities';

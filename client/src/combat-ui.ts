@@ -3,6 +3,15 @@ import {
   COMBAT_ACTION_TIMEOUT_MS,
   PHYSICAL_DAMAGE_TYPES,
   SKILL_DEFS,
+  ABILITY_DEFS,
+  ABILITY_IDS,
+  SPELL_DEFS,
+  SPELL_IDS,
+  AURA_DEFS,
+  AURA_IDS,
+  type AbilityId,
+  type SpellId,
+  type AuraId,
   type CombatState,
   type CombatStrategy,
   type CombatSkillId,
@@ -16,6 +25,7 @@ import {
 } from 'shared';
 
 export type CombatActionCallback = (action: CombatAction) => void;
+export type AuraToggleCallback = (auraId: string) => void;
 
 const STRATEGY_LABELS: Record<CombatStrategy, string> = {
   technical: 'Technical',
@@ -45,8 +55,10 @@ export class CombatUI {
   private selectedStrategy: CombatStrategy = 'technical';
   private selectedDamageType: PhysicalDamageType = 'slicing';
   private onAction: CombatActionCallback | null = null;
+  private onAuraToggle: AuraToggleCallback | null = null;
   private onClose: (() => void) | null = null;
   private actionsEnabled = false;
+  private currentMyStats: CombatParticipant | null = null;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private turnDeadline = 0;
   private serverTimeOffset = 0;
@@ -86,6 +98,12 @@ export class CombatUI {
         <div id="combat-log"></div>
         <div id="combat-controls">
           <div class="combat-control-group">
+            <div class="combat-control-label">Auras</div>
+            <div id="combat-aura-row" class="combat-btn-row"></div>
+          </div>
+          <div class="combat-divider"></div>
+          <div id="combat-resource-display" class="combat-resource-display"></div>
+          <div class="combat-control-group">
             <div class="combat-control-label">Strategy</div>
             <div id="combat-strategy-row" class="combat-btn-row"></div>
           </div>
@@ -115,6 +133,7 @@ export class CombatUI {
     const strategyRow = this.overlay.querySelector('#combat-strategy-row')!;
     const damageRow = this.overlay.querySelector('#combat-damage-row')!;
     const actionRow = this.overlay.querySelector('#combat-action-row')!;
+    const auraRow = this.overlay.querySelector('#combat-aura-row')!;
 
     // Strategy buttons
     for (const strat of COMBAT_STRATEGIES) {
@@ -134,7 +153,21 @@ export class CombatUI {
     // Damage type buttons are built dynamically via setAvailableDamageTypes
     this.setAvailableDamageTypes(PHYSICAL_DAMAGE_TYPES as unknown as PhysicalDamageType[]);
 
-    // Action buttons
+    // Aura toggle buttons
+    for (const auraId of AURA_IDS) {
+      const def = AURA_DEFS[auraId];
+      const btn = document.createElement('button');
+      btn.className = 'combat-toggle-btn combat-aura-btn';
+      btn.textContent = `${def.name} (${def.kpCost} KP)`;
+      btn.dataset.auraId = auraId;
+      btn.addEventListener('click', () => {
+        if (!this.onAuraToggle) return;
+        this.onAuraToggle(auraId);
+      });
+      auraRow.appendChild(btn);
+    }
+
+    // Action buttons — Attack first
     const attackBtn = document.createElement('button');
     attackBtn.className = 'combat-action-btn attack';
     attackBtn.textContent = 'Attack';
@@ -144,7 +177,41 @@ export class CombatUI {
       this.setActionsEnabled(false);
       this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
     });
+    actionRow.appendChild(attackBtn);
 
+    // Ability buttons
+    for (const abilityId of ABILITY_IDS) {
+      const def = ABILITY_DEFS[abilityId];
+      const btn = document.createElement('button');
+      btn.className = 'combat-action-btn ability';
+      btn.textContent = `${def.name} (${def.epCost} EP)`;
+      btn.dataset.abilityId = abilityId;
+      btn.addEventListener('click', () => {
+        if (!this.actionsEnabled || !this.onAction) return;
+        this.onAction({ type: 'ability', strategy: def.requiredStrategy, abilityId });
+        this.setActionsEnabled(false);
+        this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
+      });
+      actionRow.appendChild(btn);
+    }
+
+    // Spell buttons
+    for (const spellId of SPELL_IDS) {
+      const def = SPELL_DEFS[spellId];
+      const btn = document.createElement('button');
+      btn.className = 'combat-action-btn spell';
+      btn.textContent = `${def.name} (${def.mpCost} MP)`;
+      btn.dataset.spellId = spellId;
+      btn.addEventListener('click', () => {
+        if (!this.actionsEnabled || !this.onAction) return;
+        this.onAction({ type: 'spell', strategy: this.selectedStrategy, spellId });
+        this.setActionsEnabled(false);
+        this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
+      });
+      actionRow.appendChild(btn);
+    }
+
+    // Defend
     const defendBtn = document.createElement('button');
     defendBtn.className = 'combat-action-btn defend';
     defendBtn.textContent = 'Defend';
@@ -154,7 +221,9 @@ export class CombatUI {
       this.setActionsEnabled(false);
       this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
     });
+    actionRow.appendChild(defendBtn);
 
+    // Run
     const runBtn = document.createElement('button');
     runBtn.className = 'combat-action-btn run';
     runBtn.textContent = 'Run';
@@ -164,14 +233,15 @@ export class CombatUI {
       this.setActionsEnabled(false);
       this.logSection.innerHTML = `<div class="combat-log-entry combat-log-waiting">Waiting on other players...</div>`;
     });
-
-    actionRow.appendChild(attackBtn);
-    actionRow.appendChild(defendBtn);
     actionRow.appendChild(runBtn);
   }
 
   setOnAction(cb: CombatActionCallback): void {
     this.onAction = cb;
+  }
+
+  setOnAuraToggle(cb: AuraToggleCallback): void {
+    this.onAuraToggle = cb;
   }
 
   setOnClose(cb: () => void): void {
@@ -235,6 +305,9 @@ export class CombatUI {
   updateState(state: CombatState, myPlayerId: string): void {
     if (this.isInPlayback) return; // don't clobber playback
 
+    // Track my stats for resource checks
+    this.currentMyStats = state.allies.find(a => a.id === myPlayerId) ?? null;
+
     // Round label
     const roundLabel = this.overlay.querySelector('#combat-round-label')!;
     roundLabel.textContent = `Combat \u2014 Round ${state.round}`;
@@ -248,7 +321,7 @@ export class CombatUI {
     this.renderParticipants(state, myPlayerId, null);
 
     // Log — show prompt based on action state
-    const myAlly = state.allies.find(a => a.id === myPlayerId);
+    const myAlly = this.currentMyStats;
     const amDead = myAlly ? !myAlly.alive : false;
     const awaiting = state.awaitingActionFrom.includes(myPlayerId);
     if (state.phase === 'awaiting_action') {
@@ -264,6 +337,7 @@ export class CombatUI {
     // Show/hide controls
     this.controlsSection.style.display = amDead ? 'none' : '';
     this.resultSection.style.display = 'none';
+    this.updateResourceDisplay();
     this.setActionsEnabled(awaiting);
   }
 
@@ -463,6 +537,37 @@ export class CombatUI {
         <span class="combat-bar-value">${a.stats.sp}/${a.stats.maxSp}</span>
       </div>`;
     }
+    if (a.stats.maxEp > 0) {
+      const epPct = Math.max(0, a.stats.ep / a.stats.maxEp * 100);
+      bars += `<div class="combat-card-bar-row">
+        <span class="combat-bar-label">EP</span>
+        <div class="combat-bar-container ep-bar">
+          <div class="combat-bar ep" style="width:${epPct}%"></div>
+        </div>
+        <span class="combat-bar-value">${a.stats.ep}/${a.stats.maxEp}</span>
+      </div>`;
+    }
+    if (a.stats.maxKp > 0) {
+      const kpPct = Math.max(0, a.stats.kp / a.stats.maxKp * 100);
+      bars += `<div class="combat-card-bar-row">
+        <span class="combat-bar-label">KP</span>
+        <div class="combat-bar-container kp-bar">
+          <div class="combat-bar kp" style="width:${kpPct}%"></div>
+        </div>
+        <span class="combat-bar-value">${a.stats.kp}/${a.stats.maxKp}</span>
+      </div>`;
+    }
+
+    // Active aura indicators
+    let auraHtml = '';
+    if (a.activeAuras && a.activeAuras.length > 0) {
+      const auraNames = a.activeAuras
+        .map(id => AURA_DEFS[id as AuraId]?.name)
+        .filter(Boolean);
+      if (auraNames.length > 0) {
+        auraHtml = `<div class="combat-aura-indicators">${auraNames.join(', ')}</div>`;
+      }
+    }
 
     // Ally status (only during awaiting_action, not during playback)
     let statusHtml = '';
@@ -482,6 +587,7 @@ export class CombatUI {
     return `<div class="combat-card ally ${isMe ? 'me' : ''}">
       <div class="combat-card-name">${a.name}${isMe ? ' (You)' : ''}</div>
       ${bars}
+      ${auraHtml}
       ${statusHtml}
     </div>`;
   }
@@ -490,9 +596,65 @@ export class CombatUI {
     this.actionsEnabled = enabled;
     const btns = this.controlsSection.querySelectorAll('.combat-action-btn');
     btns.forEach(btn => {
-      (btn as HTMLButtonElement).disabled = !enabled;
-      btn.classList.toggle('disabled', !enabled);
+      const el = btn as HTMLButtonElement;
+      if (!enabled) {
+        el.disabled = true;
+        el.classList.add('disabled');
+        return;
+      }
+
+      // Check resource costs for ability/spell buttons
+      const abilityId = el.dataset.abilityId;
+      const spellId = el.dataset.spellId;
+      if (abilityId && this.currentMyStats) {
+        const def = ABILITY_DEFS[abilityId as AbilityId];
+        const canAfford = def && this.currentMyStats.stats.ep >= def.epCost;
+        el.disabled = !canAfford;
+        el.classList.toggle('disabled', !canAfford);
+      } else if (spellId && this.currentMyStats) {
+        const def = SPELL_DEFS[spellId as SpellId];
+        const canAfford = def && this.currentMyStats.stats.mp >= def.mpCost;
+        el.disabled = !canAfford;
+        el.classList.toggle('disabled', !canAfford);
+      } else {
+        el.disabled = false;
+        el.classList.remove('disabled');
+      }
     });
+
+    // Update aura buttons
+    this.updateAuraButtons();
+  }
+
+  private updateAuraButtons(): void {
+    const auraRow = this.overlay.querySelector('#combat-aura-row');
+    if (!auraRow) return;
+    const btns = auraRow.querySelectorAll('.combat-aura-btn');
+    btns.forEach(btn => {
+      const el = btn as HTMLButtonElement;
+      const auraId = el.dataset.auraId;
+      if (!auraId || !this.currentMyStats) return;
+
+      const isActive = this.currentMyStats.activeAuras?.includes(auraId);
+      el.classList.toggle('active', !!isActive);
+
+      // Disable if not active and can't afford
+      const def = AURA_DEFS[auraId as AuraId];
+      if (!isActive && def && this.currentMyStats.stats.kp < def.kpCost) {
+        el.disabled = true;
+        el.classList.add('disabled');
+      } else {
+        el.disabled = false;
+        el.classList.remove('disabled');
+      }
+    });
+  }
+
+  private updateResourceDisplay(): void {
+    const el = this.overlay.querySelector('#combat-resource-display');
+    if (!el || !this.currentMyStats) return;
+    const s = this.currentMyStats.stats;
+    el.innerHTML = `<span class="combat-resource ep">EP: ${s.ep}/${s.maxEp}</span> <span class="combat-resource mp">MP: ${s.mp}/${s.maxMp}</span> <span class="combat-resource kp">KP: ${s.kp}/${s.maxKp}</span>`;
   }
 
   private startTimer(): void {
